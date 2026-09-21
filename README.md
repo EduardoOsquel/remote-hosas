@@ -23,6 +23,10 @@ The previous `python usbip_ui.py` entry point opens the same application.
 - `management_ui.py`: component cards, detection and asynchronous management actions.
 - `ui_theme.py`: shared colors, controls and spacing.
 - `ui_icons.py`: vector icons with normal and disabled states.
+- `app_icon.py`: window icon and Windows application identity.
+- `assets/remote-hosas.svg`: original twin-joystick H/bridge artwork.
+- `assets/remote-hosas.png`: 512px preview with transparent outer corners.
+- `assets/remote-hosas.ico`: Windows icon with 16, 24, 32, 48, 64, 128 and 256px images.
 - `command_log.py`: English command summaries and original diagnostic output.
 - `usbip_manager.py`: USB/IP command builders and device-list parsing.
 - `usbip_installer.py`: official release selection, verified downloads and installer execution.
@@ -36,6 +40,14 @@ Host keeps the device table at the available width after refresh. DEVICE absorbs
 extra space while the other columns fit their content. Drag the separator to
 adjust table and log height. Table and dropdown selection remain synchronized,
 and refresh preserves the selected BUSID when it is still available.
+Bind and Unbind automatically refresh the device list, visible states, count and
+selection after each attempt, including failures, without changing table sizing.
+
+The application uses its icon in the window and sets a Windows application ID
+when started from either launcher. Regenerate the PNG and ICO after editing the
+SVG with `python tools/build_icon.py`. The ICO is ready for future packaging;
+no executable is built by this project yet. A future packager must include the
+`assets` directory alongside the application modules.
 
 Management groups usbipd-win and usbip-win2 into separate cards. usbipd-win detection
 checks PATH and standard installation directories. usbip-win2 detection uses its

@@ -30,6 +30,7 @@ except ImportError:  # pragma: no cover
 from management_ui import ManagementTab
 from command_log import record_exception, record_result
 from ui_theme import APP_STYLESHEET, make_button, setup_page
+from app_icon import application_icon, set_windows_app_id
 
 from joystick_bridge import JoystickPacket, JoystickState
 from usbip_manager import (
@@ -194,6 +195,7 @@ class HostModeTab(QWidget):
             return
         busid = self.devices[idx].busid
         self.run_command(f"Bind device {busid}", build_usbipd_bind_command(busid))
+        self.refresh_usbipd_devices()
 
     def unbind_selected_device(self) -> None:
         idx = self.device_combo.currentIndex()
@@ -202,6 +204,7 @@ class HostModeTab(QWidget):
             return
         busid = self.devices[idx].busid
         self.run_command(f"Unbind device {busid}", build_usbipd_unbind_command(busid))
+        self.refresh_usbipd_devices()
 
 
 class ClientModeTab(QWidget):
@@ -421,6 +424,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("USB/IP + Joystick Bridge")
+        self.setWindowIcon(application_icon())
         self.resize(1100, 800)
         self.setStyleSheet(APP_STYLESHEET)
         self.setMinimumSize(900, 620)
@@ -444,8 +448,10 @@ class UsbipJoystickBridgeApp(QMainWindow):
 
 
 def main() -> None:
+    set_windows_app_id()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    app.setWindowIcon(application_icon())
     window = UsbipJoystickBridgeApp()
     window.show()
     sys.exit(app.exec())

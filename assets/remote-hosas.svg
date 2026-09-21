@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Remote HOSAS — twin controls, one connection</title>
+  <desc>Two angled joystick grips form an H joined by a blue and cyan bridge, on a rounded navy tile.</desc>
+  <rect x="4" y="4" width="248" height="248" rx="56" fill="#101722"/>
+  <rect x="10" y="10" width="236" height="236" rx="50" fill="none" stroke="#29364a" stroke-width="4"/>
+  <path d="M76 142H180" fill="none" stroke="#326ac5" stroke-width="24"/>
+  <path d="M110 142H146" fill="none" stroke="#8bddf2" stroke-width="12"/>
+  <path d="M76 184V112L60 88V68H88L102 96L88 116V184Z" fill="#63a5ff"/>
+  <path d="M180 184V112L196 88V68H168L154 96L168 116V184Z" fill="#8bddf2"/>
+  <rect x="48" y="178" width="64" height="24" rx="10" fill="#63a5ff"/>
+  <rect x="144" y="178" width="64" height="24" rx="10" fill="#8bddf2"/>
+  <path d="M68 78H82M174 78H188" stroke="#101722" stroke-width="6" stroke-linecap="round"/>
+</svg>
