@@ -2,6 +2,7 @@ import os
 import sys
 import time
 from subprocess import CompletedProcess
+from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -12,6 +13,7 @@ from PyQt6.QtWidgets import QApplication
 
 from command_log import DIAGNOSTICS
 from management_ui import ManagementTab
+from usbip_installer import ClientInstallation
 
 
 @pytest.fixture
@@ -66,12 +68,38 @@ def test_missing_executable_recovers_controls(management):
 
 def test_download_and_uninstall_have_distinct_targets(management):
     _, widget = management
-    with patch("management_ui.QDesktopServices.openUrl", return_value=True) as open_url:
-        widget.install_usbip_win2()
-        assert "usbip-win2/releases/latest" in open_url.call_args.args[0].toString()
     with patch.object(widget, "_start_command") as start:
+        widget.install_usbip_win2()
+        assert start.call_args.args[1][-1] == "install"
+        assert start.call_args.kwargs["client_action"]
+    installed = ClientInstallation("0.9.8.0", Path("C:/Program Files/USBip/unins000.exe"))
+    with patch("management_ui.find_client_installation", return_value=installed), \
+            patch.object(widget, "_start_command") as start:
         widget.uninstall_usbip_win2()
-        assert start.call_args.args[1] == ["control.exe", "appwiz.cpl"]
+        assert start.call_args.args[1][-1] == "uninstall"
+
+
+def test_client_uninstall_requires_registered_uninstaller(management):
+    _, widget = management
+    assert not widget.uninstall_usbip_win2_btn.isEnabled()
+    with patch("management_ui.find_client_installation", return_value=None), \
+            patch.object(widget, "_start_command") as start:
+        widget.uninstall_usbip_win2()
+        start.assert_not_called()
+    installed = ClientInstallation("0.9.8.0", Path("C:/Program Files/USBip/unins000.exe"))
+    with patch.object(widget, "_is_usbip_win2_installed", return_value=True), \
+            patch("management_ui.find_client_installation", return_value=installed):
+        widget.refresh_installation_status()
+        assert widget.uninstall_usbip_win2_btn.isEnabled()
+        assert not widget.install_usbip_win2_btn.isEnabled()
+
+
+def test_client_reboot_exit_code_is_success(management):
+    application, widget = management
+    widget._start_command("Test restart", [sys.executable, "-c", "raise SystemExit(3010)"], client_action=True)
+    wait_for_action(application, widget)
+    assert "Completed - restart Windows" in widget.operation_status.text()
+    assert "[ERROR]" not in widget.log_widget.toPlainText()
 
 
 def test_diagnostics_export_preserves_original_output(management, tmp_path):

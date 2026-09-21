@@ -1,12 +1,12 @@
 """Dependency management UI; external commands run without blocking Qt."""
 
 import os
+import json
 import shutil
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QProcess, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtCore import QProcess
 from PyQt6.QtWidgets import (
     QFileDialog, QFrame, QHBoxLayout, QLabel, QProgressBar, QTextEdit,
     QVBoxLayout, QWidget,
@@ -14,7 +14,9 @@ from PyQt6.QtWidgets import (
 
 from command_log import DIAGNOSTICS, record_exception, record_result
 from ui_theme import make_button, setup_page
-from usbip_manager import build_usbipd_install_command
+from usbip_manager import (build_usbipd_install_command, build_usbip_win2_install_command,
+                           build_usbip_win2_uninstall_command)
+from usbip_installer import find_client_installation, supported_architecture, InstallError
 
 
 class ManagementTab(QWidget):
@@ -42,9 +44,10 @@ class ManagementTab(QWidget):
         self.install_usbipd_btn.clicked.connect(self.install_usbipd)
         self.uninstall_usbipd_btn = make_button("Uninstall", "remove")
         self.uninstall_usbipd_btn.clicked.connect(self.uninstall_usbipd)
-        self.install_usbip_win2_btn = make_button("Open downloads", "external")
+        self.install_usbip_win2_btn = make_button("Install", "download")
+        self.install_usbip_win2_btn.setProperty("primary", True)
         self.install_usbip_win2_btn.clicked.connect(self.install_usbip_win2)
-        self.uninstall_usbip_win2_btn = make_button("Open uninstaller", "external")
+        self.uninstall_usbip_win2_btn = make_button("Uninstall", "remove")
         self.uninstall_usbip_win2_btn.clicked.connect(self.uninstall_usbip_win2)
 
         cards = QHBoxLayout()
@@ -57,7 +60,7 @@ class ManagementTab(QWidget):
         client_card, self.usbip_win2_status = self._component_card(
             "usbip-win2", "Windows USB/IP client",
             "Connect Windows to USB devices shared by a remote host.",
-            "Download and install manually, then refresh the status.",
+            "Installs the latest stable release for this PC. USB devices may briefly reconnect; a restart may be required.",
             [self.install_usbip_win2_btn, self.uninstall_usbip_win2_btn])
         cards.addWidget(host_card, 1)
         cards.addWidget(client_card, 1)
@@ -148,7 +151,7 @@ class ManagementTab(QWidget):
         return self._component_detected("usbipd", "usbipd-win")
 
     def _is_usbip_win2_installed(self):
-        return self._component_detected("usbip", "usbip-win2")
+        return find_client_installation() is not None
 
     def refresh_installation_status(self) -> None:
         host = self._is_usbipd_installed()
@@ -156,17 +159,28 @@ class ManagementTab(QWidget):
         for badge, detected in ((self.usbipd_status, host), (self.usbip_win2_status, client)):
             badge.setText("Detected" if detected else "Not detected")
             badge.setProperty("detected", detected)
-            badge.setToolTip("Checks executable availability and standard installation folders.")
+            badge.setToolTip("Checks the registered installer." if badge is self.usbip_win2_status else
+                             "Checks executable availability and standard installation folders.")
             badge.style().unpolish(badge)
             badge.style().polish(badge)
         busy = self._process is not None
         self.install_usbipd_btn.setEnabled(not busy and not host)
         self.uninstall_usbipd_btn.setEnabled(not busy and host)
-        self.install_usbip_win2_btn.setEnabled(not busy)
-        self.uninstall_usbip_win2_btn.setEnabled(not busy)
+        try:
+            supported_architecture()
+            supported = True
+            self.install_usbip_win2_btn.setToolTip("Download and install the latest stable official release.")
+        except InstallError as error:
+            supported = False
+            self.install_usbip_win2_btn.setToolTip(str(error))
+        self.install_usbip_win2_btn.setEnabled(not busy and not client and supported)
+        installation = find_client_installation() if client else None
+        self.uninstall_usbip_win2_btn.setEnabled(not busy and bool(installation and installation.uninstaller))
+        self.uninstall_usbip_win2_btn.setToolTip("Uninstall usbip-win2." if installation and installation.uninstaller else
+                                                "No registered usbip-win2 uninstaller was found.")
         self.refresh_btn.setEnabled(not busy)
 
-    def _start_command(self, label, command, success_message=None):
+    def _start_command(self, label, command, success_message=None, client_action=False):
         if self._process is not None:
             return
         process = QProcess(self)
@@ -174,6 +188,10 @@ class ManagementTab(QWidget):
         self._command = command
         self._label = label
         self._success_message = success_message
+        self._client_action = client_action
+        self._stdout = bytearray()
+        self._pending_output = bytearray()
+        process.readyReadStandardOutput.connect(self._read_output)
         process.finished.connect(self._command_finished)
         process.errorOccurred.connect(self._command_error)
         self.operation_status.setText(f"{label} in progress...")
@@ -182,19 +200,41 @@ class ManagementTab(QWidget):
         self.refresh_installation_status()
         process.start(command[0], command[1:])
 
+    def _read_output(self):
+        chunk = bytes(self._process.readAllStandardOutput())
+        self._stdout.extend(chunk)
+        if not self._client_action:
+            return
+        self._pending_output.extend(chunk)
+        while b"\n" in self._pending_output:
+            line, _, remaining = self._pending_output.partition(b"\n")
+            self._pending_output = bytearray(remaining)
+            try:
+                message = json.loads(line).get("message")
+                if isinstance(message, str):
+                    self.log(message)
+                    self.operation_status.setText(message)
+            except (ValueError, AttributeError):
+                pass
+
     def _command_finished(self, exit_code, exit_status):
         process = self._process
         if process is None:
             return
-        stdout = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        self._read_output()
+        stdout = self._stdout.decode("utf-8", errors="replace")
         stderr = bytes(process.readAllStandardError()).decode("utf-8", errors="replace")
         if exit_status == QProcess.ExitStatus.CrashExit and exit_code == 0:
             exit_code = -1
+        reboot = self._client_action and exit_code == 3010
         message = record_result(self._label, self._command, exit_code, stdout, stderr)
+        if reboot:
+            message = "[OK] Action completed. Restart Windows to finish driver setup."
         self.log(message)
         if exit_code == 0 and self._success_message:
             self.log(self._success_message)
-        self.operation_status.setText("Completed" if exit_code == 0 else "Action failed. See the activity log.")
+        self.operation_status.setText("Completed - restart Windows." if reboot else
+                                     "Completed" if exit_code == 0 else "Action failed. See the activity log.")
         self._finish_command()
 
     def _command_error(self, error):
@@ -217,15 +257,15 @@ class ManagementTab(QWidget):
         self._start_command("Uninstall usbipd-win", ["winget", "uninstall", "usbipd"])
 
     def install_usbip_win2(self):
-        url = QUrl("https://github.com/vadimgrn/usbip-win2/releases/latest")
-        if QDesktopServices.openUrl(url):
-            self.log("[OK] Download page opened. Install usbip-win2, then select Refresh status.")
-        else:
-            self.log("[ERROR] Could not open the download page in your browser.")
+        if self.is_busy or self._is_usbip_win2_installed():
+            return
+        self._start_command("Install usbip-win2", build_usbip_win2_install_command(), client_action=True)
 
     def uninstall_usbip_win2(self):
-        self._start_command("Open Windows uninstaller", ["control.exe", "appwiz.cpl"],
-                            "Select usbip-win2 in Windows to uninstall it, then refresh the status.")
+        installation = find_client_installation()
+        if self.is_busy or not installation or not installation.uninstaller:
+            return
+        self._start_command("Uninstall usbip-win2", build_usbip_win2_uninstall_command(), client_action=True)
 
     def export_diagnostics(self):
         filename, _ = QFileDialog.getSaveFileName(

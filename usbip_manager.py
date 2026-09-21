@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import sys
+from pathlib import Path
 from dataclasses import dataclass
 from typing import List
 
@@ -101,10 +103,8 @@ def build_usbipd_install_command() -> List[str]:
 
 
 def build_usbip_win2_install_command() -> List[str]:
-    return [
-        "powershell",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "Start-Process https://github.com/vadimgrn/usbip-win2/releases/latest -Verb Open",
-    ]
+    return [sys.executable, "-u", str(Path(__file__).with_name("usbip_installer.py")), "install"]
+
+
+def build_usbip_win2_uninstall_command() -> List[str]:
+    return [sys.executable, "-u", str(Path(__file__).with_name("usbip_installer.py")), "uninstall"]
