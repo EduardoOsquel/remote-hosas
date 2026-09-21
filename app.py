@@ -42,7 +42,7 @@ from usbip_manager import (
 )
 
 
-class UsbipTab(QWidget):
+class HostModeTab(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.devices: List[UsbipDevice] = []
@@ -50,19 +50,9 @@ class UsbipTab(QWidget):
 
         root = QVBoxLayout(self)
 
-        host_mode_group = QGroupBox("Host mode")
-        host_layout = QVBoxLayout(host_mode_group)
-
-        self.host_input = QComboBox()
-        self.host_input.setEditable(True)
-        self.host_input.addItem("192.168.1.10")
-        self.host_input.addItem("10.0.0.5")
-        self.host_input.addItem("localhost")
-        host_layout.addWidget(self.host_input)
-
         self.device_combo = QComboBox()
         self.device_combo.addItem("No shared USB devices")
-        host_layout.addWidget(self.device_combo)
+        root.addWidget(self.device_combo)
 
         self.device_table = QTableWidget(0, 4)
         self.device_table.setHorizontalHeaderLabels(["BUSID", "VID:PID", "DEVICE", "STATE"])
@@ -74,105 +64,25 @@ class UsbipTab(QWidget):
         self.device_table.horizontalHeader().setStretchLastSection(True)
         self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.device_table.setMinimumHeight(220)
-        host_layout.addWidget(self.device_table)
-
-        host_actions = QHBoxLayout()
-        self.list_btn = self._make_button("📋 List devices")
-        self.list_btn.clicked.connect(self.refresh_usbipd_devices)
-        self.bind_btn = self._make_button("🔒 Bind / share")
-        self.bind_btn.clicked.connect(self.bind_selected_device)
-        self.unbind_btn = self._make_button("🔓 Unbind / stop sharing")
-        self.unbind_btn.clicked.connect(self.unbind_selected_device)
-        host_actions.addWidget(self.list_btn)
-        host_actions.addWidget(self.bind_btn)
-        host_actions.addWidget(self.unbind_btn)
-        host_layout.addLayout(host_actions)
-
-        client_mode_group = QGroupBox("Client mode")
-        client_layout = QVBoxLayout(client_mode_group)
-        self.port_input = QComboBox()
-        self.port_input.setEditable(True)
-        self.port_input.addItem("1")
-        self.port_input.addItem("2")
-        self.port_input.addItem("3")
-        client_layout.addWidget(self.port_input)
-
-        client_actions = QHBoxLayout()
-        self.attach_btn = self._make_button("🔌 Attach / connect")
-        self.attach_btn.clicked.connect(self.attach_selected_device)
-        self.detach_btn = self._make_button("🧯 Detach / disconnect")
-        self.detach_btn.clicked.connect(self.detach_selected_device)
-        client_actions.addWidget(self.attach_btn)
-        client_actions.addWidget(self.detach_btn)
-        client_layout.addLayout(client_actions)
-
-        management_group = QGroupBox("Management / Administration")
-        management_layout = QVBoxLayout(management_group)
-
-        self.usbipd_installed_check = QCheckBox("usbipd-win installed")
-        self.usbipd_installed_check.setEnabled(False)
-        self.usbip_win2_installed_check = QCheckBox("usbip-win2 installed")
-        self.usbip_win2_installed_check.setEnabled(False)
-
-        management_buttons = QHBoxLayout()
-        self.install_usbipd_btn = self._make_button("⬇ Install usbipd-win")
-        self.install_usbipd_btn.clicked.connect(self.install_usbipd)
-
-        self.uninstall_usbipd_btn = self._make_button("🗑 Uninstall usbipd-win")
-        self.uninstall_usbipd_btn.clicked.connect(self.uninstall_usbipd)
-
-        self.install_usbip_win2_btn = self._make_button("🔧 Install usbip-win2")
-        self.install_usbip_win2_btn.clicked.connect(self.install_usbip_win2)
-
-        self.uninstall_usbip_win2_btn = self._make_button("🧹 Open usbip-win2 uninstall")
-        self.uninstall_usbip_win2_btn.clicked.connect(self.uninstall_usbip_win2)
-
-        management_buttons.addWidget(self.install_usbipd_btn)
-        management_buttons.addWidget(self.uninstall_usbipd_btn)
-        management_buttons.addWidget(self.install_usbip_win2_btn)
-        management_buttons.addWidget(self.uninstall_usbip_win2_btn)
-
-        management_layout.addWidget(self.usbipd_installed_check)
-        management_layout.addWidget(self.usbip_win2_installed_check)
-        management_layout.addLayout(management_buttons)
-
-        root.addWidget(host_mode_group)
-        root.addWidget(client_mode_group)
-        root.addWidget(management_group)
+        root.addWidget(self.device_table)
 
         actions = QHBoxLayout()
         self.list_btn = self._make_button("📋 List devices")
         self.list_btn.clicked.connect(self.refresh_usbipd_devices)
-
         self.bind_btn = self._make_button("🔒 Bind / share")
         self.bind_btn.clicked.connect(self.bind_selected_device)
-
         self.unbind_btn = self._make_button("🔓 Unbind / stop sharing")
         self.unbind_btn.clicked.connect(self.unbind_selected_device)
-
-        self.attach_btn = self._make_button("🔌 Attach / connect")
-        self.attach_btn.clicked.connect(self.attach_selected_device)
-
-        self.detach_btn = self._make_button("🧯 Detach / disconnect")
-        self.detach_btn.clicked.connect(self.detach_selected_device)
-
-        for button in [
-            self.list_btn,
-            self.bind_btn,
-            self.unbind_btn,
-            self.attach_btn,
-            self.detach_btn,
-        ]:
-            actions.addWidget(button)
+        actions.addWidget(self.list_btn)
+        actions.addWidget(self.bind_btn)
+        actions.addWidget(self.unbind_btn)
+        root.addLayout(actions)
 
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
-        self.log_widget.setPlaceholderText("USB/IP process logs...")
-
-        root.addLayout(actions)
+        self.log_widget.setPlaceholderText("Host logs...")
         root.addWidget(self.log_widget)
 
-        self.refresh_installation_status()
         self.refresh_usbipd_devices()
 
     @staticmethod
@@ -204,20 +114,17 @@ class UsbipTab(QWidget):
             self.log(f"> {label}")
             self.log(f"Running: {' '.join(command)}")
             result = subprocess.run(command, capture_output=True, text=True, shell=False, check=False)
-
             if result.stdout:
                 self.log(result.stdout.strip())
             if result.stderr:
                 self.log(result.stderr.strip())
-
             if result.returncode == 0:
                 self.log(f"[OK] {label}")
             else:
                 self.log(f"[ERROR] {label} (exit code: {result.returncode})")
-
         except FileNotFoundError as exc:
             self.log(f"[ERROR] Executable not found: {exc}")
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             self.log(f"[ERROR] Exception: {exc}")
 
     def refresh_usbipd_devices(self) -> None:
@@ -238,7 +145,6 @@ class UsbipTab(QWidget):
             self.device_combo.clear()
 
             if not devices:
-                self.device_combo.clear()
                 self.device_combo.addItem("No shared USB devices")
                 self.device_table.setRowCount(0)
                 self.log("No USB devices are shared yet or no bind has been performed.")
@@ -251,7 +157,6 @@ class UsbipTab(QWidget):
                 state = device.state or "Not shared"
                 name = device.name or "Unknown device"
                 self.device_combo.addItem(f"{device.busid} - {name}")
-
                 self.device_table.setItem(row_index, 0, QTableWidgetItem(device.busid))
                 self.device_table.setItem(row_index, 1, QTableWidgetItem(vid_pid))
                 self.device_table.setItem(row_index, 2, QTableWidgetItem(name))
@@ -259,52 +164,8 @@ class UsbipTab(QWidget):
 
             self.device_table.resizeColumnsToContents()
             self.log(f"Detected {len(devices)} USB device(s).")
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             self.log(f"[ERROR] USB/IP device listing: {exc}")
-
-    def _is_usbipd_installed(self) -> bool:
-        return shutil.which("usbipd") is not None
-
-    def _is_usbip_win2_installed(self) -> bool:
-        candidate_dirs = [
-            os.path.join(os.environ.get("ProgramFiles", "C:/Program Files"), "usbip-win2"),
-            os.path.join(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"), "usbip-win2"),
-            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "usbip-win2"),
-            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "usbipd-win"),
-        ]
-        return any(os.path.isdir(path) for path in candidate_dirs if path)
-
-    def refresh_installation_status(self) -> None:
-        self.usbipd_installed_check.setChecked(self._is_usbipd_installed())
-        self.usbip_win2_installed_check.setChecked(self._is_usbip_win2_installed())
-
-    def install_usbipd(self) -> None:
-        self.run_command("Install usbipd-win", build_usbipd_install_command())
-        self.refresh_installation_status()
-
-    def uninstall_usbipd(self) -> None:
-        if not self._is_usbipd_installed():
-            QMessageBox.information(self, "usbipd-win", "usbipd-win is not currently installed.")
-            return
-        self.run_command("Uninstall usbipd-win", ["winget", "uninstall", "usbipd"])
-        self.refresh_installation_status()
-
-    def install_usbip_win2(self) -> None:
-        self.run_command("Open usbip-win2 download", build_usbip_win2_install_command())
-        self.refresh_installation_status()
-
-    def uninstall_usbip_win2(self) -> None:
-        self.run_command(
-            "Open usbip-win2 uninstall guidance",
-            [
-                "powershell",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                "Start-Process https://github.com/vadimgrn/usbip-win2/releases/latest -Verb Open",
-            ],
-        )
-        self.refresh_installation_status()
 
     def bind_selected_device(self) -> None:
         idx = self.device_combo.currentIndex()
@@ -321,6 +182,112 @@ class UsbipTab(QWidget):
             return
         busid = self.devices[idx].busid
         self.run_command(f"Unbind device {busid}", build_usbipd_unbind_command(busid))
+
+
+class ClientModeTab(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.devices: List[UsbipDevice] = []
+        self._log_buffer: List[str] = []
+
+        root = QVBoxLayout(self)
+
+        self.host_input = QComboBox()
+        self.host_input.setEditable(True)
+        self.host_input.addItem("192.168.1.10")
+        self.host_input.addItem("10.0.0.5")
+        self.host_input.addItem("localhost")
+        root.addWidget(self.host_input)
+
+        self.port_input = QComboBox()
+        self.port_input.setEditable(True)
+        self.port_input.addItem("1")
+        self.port_input.addItem("2")
+        self.port_input.addItem("3")
+        root.addWidget(self.port_input)
+
+        self.device_combo = QComboBox()
+        self.device_combo.addItem("No shared USB devices")
+        root.addWidget(self.device_combo)
+
+        actions = QHBoxLayout()
+        self.attach_btn = self._make_button("🔌 Attach / connect")
+        self.attach_btn.clicked.connect(self.attach_selected_device)
+        self.detach_btn = self._make_button("🧯 Detach / disconnect")
+        self.detach_btn.clicked.connect(self.detach_selected_device)
+        actions.addWidget(self.attach_btn)
+        actions.addWidget(self.detach_btn)
+        root.addLayout(actions)
+
+        self.log_widget = QTextEdit()
+        self.log_widget.setReadOnly(True)
+        self.log_widget.setPlaceholderText("Client logs...")
+        root.addWidget(self.log_widget)
+
+        self.refresh_usbipd_devices()
+
+    @staticmethod
+    def _make_button(text: str) -> QPushButton:
+        button = QPushButton(text)
+        button.setStyleSheet(
+            "QPushButton {"
+            "  min-height: 40px;"
+            "  border-radius: 10px;"
+            "  padding: 8px 14px;"
+            "  font-weight: 600;"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #e0ecff, stop:1 #dfe7ff);"
+            "  color: #112240;"
+            "  border: 1px solid #bfd0ff;"
+            "}"
+            "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2f6fed, stop:1 #4b8bf4); color: white; }"
+        )
+        return button
+
+    def log(self, message: str) -> None:
+        self._log_buffer.append(message)
+        if len(self._log_buffer) > 250:
+            self._log_buffer = self._log_buffer[-250:]
+        self.log_widget.setPlainText("\n".join(self._log_buffer))
+        self.log_widget.verticalScrollBar().setValue(self.log_widget.verticalScrollBar().maximum())
+
+    def run_command(self, label: str, command: List[str]) -> None:
+        try:
+            self.log(f"> {label}")
+            self.log(f"Running: {' '.join(command)}")
+            result = subprocess.run(command, capture_output=True, text=True, shell=False, check=False)
+            if result.stdout:
+                self.log(result.stdout.strip())
+            if result.stderr:
+                self.log(result.stderr.strip())
+            if result.returncode == 0:
+                self.log(f"[OK] {label}")
+            else:
+                self.log(f"[ERROR] {label} (exit code: {result.returncode})")
+        except FileNotFoundError as exc:
+            self.log(f"[ERROR] Executable not found: {exc}")
+        except Exception as exc:
+            self.log(f"[ERROR] Exception: {exc}")
+
+    def refresh_usbipd_devices(self) -> None:
+        try:
+            result = subprocess.run(["usbipd", "list"], capture_output=True, text=True, shell=False, check=False)
+            if result.returncode != 0:
+                self.device_combo.clear()
+                self.device_combo.addItem("Unable to list devices")
+                self.log("usbipd is not installed or not available in PATH.")
+                return
+            devices = parse_usbipd_list(result.stdout)
+            self.devices = devices
+            self.device_combo.clear()
+            if not devices:
+                self.device_combo.addItem("No shared USB devices")
+                self.log("No USB devices are shared yet or no bind has been performed.")
+                return
+            for device in devices:
+                self.device_combo.addItem(f"{device.busid} - {device.name}")
+            self.log(f"Detected {len(devices)} USB device(s).")
+        except Exception as exc:
+            self.log(f"[ERROR] USB/IP device listing: {exc}")
 
     def attach_selected_device(self) -> None:
         host = self.host_input.currentText().strip()
@@ -340,6 +307,128 @@ class UsbipTab(QWidget):
             QMessageBox.warning(self, "Warning", "Enter a valid USB/IP port number to detach.")
             return
         self.run_command(f"Detach port {port}", build_usbip_detach_command(port))
+
+
+class ManagementTab(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        root = QVBoxLayout(self)
+
+        self.usbipd_installed_check = QCheckBox("usbipd-win installed")
+        self.usbipd_installed_check.setEnabled(False)
+        root.addWidget(self.usbipd_installed_check)
+
+        self.usbip_win2_installed_check = QCheckBox("usbip-win2 installed")
+        self.usbip_win2_installed_check.setEnabled(False)
+        root.addWidget(self.usbip_win2_installed_check)
+
+        management_buttons = QHBoxLayout()
+        self.install_usbipd_btn = self._make_button("⬇ Install usbipd-win")
+        self.install_usbipd_btn.clicked.connect(self.install_usbipd)
+        self.uninstall_usbipd_btn = self._make_button("🗑 Uninstall usbipd-win")
+        self.uninstall_usbipd_btn.clicked.connect(self.uninstall_usbipd)
+        self.install_usbip_win2_btn = self._make_button("🔧 Install usbip-win2")
+        self.install_usbip_win2_btn.clicked.connect(self.install_usbip_win2)
+        self.uninstall_usbip_win2_btn = self._make_button("🧹 Open usbip-win2 uninstall")
+        self.uninstall_usbip_win2_btn.clicked.connect(self.uninstall_usbip_win2)
+
+        for button in [
+            self.install_usbipd_btn,
+            self.uninstall_usbipd_btn,
+            self.install_usbip_win2_btn,
+            self.uninstall_usbip_win2_btn,
+        ]:
+            management_buttons.addWidget(button)
+
+        root.addLayout(management_buttons)
+
+        self.log_widget = QTextEdit()
+        self.log_widget.setReadOnly(True)
+        self.log_widget.setPlaceholderText("Management logs...")
+        root.addWidget(self.log_widget)
+
+        self.refresh_installation_status()
+
+    @staticmethod
+    def _make_button(text: str) -> QPushButton:
+        button = QPushButton(text)
+        button.setStyleSheet(
+            "QPushButton {"
+            "  min-height: 40px;"
+            "  border-radius: 10px;"
+            "  padding: 8px 14px;"
+            "  font-weight: 600;"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #e0ecff, stop:1 #dfe7ff);"
+            "  color: #112240;"
+            "  border: 1px solid #bfd0ff;"
+            "}"
+            "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2f6fed, stop:1 #4b8bf4); color: white; }"
+        )
+        return button
+
+    def log(self, message: str) -> None:
+        current = self.log_widget.toPlainText().splitlines()
+        current.append(message)
+        if len(current) > 200:
+            current = current[-200:]
+        self.log_widget.setPlainText("\n".join(current))
+
+    def _is_usbipd_installed(self) -> bool:
+        return shutil.which("usbipd") is not None
+
+    def _is_usbip_win2_installed(self) -> bool:
+        candidate_dirs = [
+            os.path.join(os.environ.get("ProgramFiles", "C:/Program Files"), "usbip-win2"),
+            os.path.join(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"), "usbip-win2"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "usbip-win2"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "usbipd-win"),
+        ]
+        return any(os.path.isdir(path) for path in candidate_dirs if path)
+
+    def refresh_installation_status(self) -> None:
+        self.usbipd_installed_check.setChecked(self._is_usbipd_installed())
+        self.usbip_win2_installed_check.setChecked(self._is_usbip_win2_installed())
+
+    def install_usbipd(self) -> None:
+        result = subprocess.run(build_usbipd_install_command(), capture_output=True, text=True, shell=False, check=False)
+        if result.stdout:
+            self.log(result.stdout.strip())
+        if result.stderr:
+            self.log(result.stderr.strip())
+        self.refresh_installation_status()
+
+    def uninstall_usbipd(self) -> None:
+        if not self._is_usbipd_installed():
+            QMessageBox.information(self, "usbipd-win", "usbipd-win is not currently installed.")
+            return
+        result = subprocess.run(["winget", "uninstall", "usbipd"], capture_output=True, text=True, shell=False, check=False)
+        if result.stdout:
+            self.log(result.stdout.strip())
+        if result.stderr:
+            self.log(result.stderr.strip())
+        self.refresh_installation_status()
+
+    def install_usbip_win2(self) -> None:
+        result = subprocess.run(build_usbip_win2_install_command(), capture_output=True, text=True, shell=False, check=False)
+        if result.stdout:
+            self.log(result.stdout.strip())
+        if result.stderr:
+            self.log(result.stderr.strip())
+        self.refresh_installation_status()
+
+    def uninstall_usbip_win2(self) -> None:
+        result = subprocess.run([
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "Start-Process https://github.com/vadimgrn/usbip-win2/releases/latest -Verb Open",
+        ], capture_output=True, text=True, shell=False, check=False)
+        if result.stdout:
+            self.log(result.stdout.strip())
+        if result.stderr:
+            self.log(result.stderr.strip())
+        self.refresh_installation_status()
 
 
 class JoystickTab(QWidget):
@@ -482,7 +571,9 @@ class UsbipJoystickBridgeApp(QMainWindow):
         )
 
         tabs = QTabWidget()
-        tabs.addTab(UsbipTab(), "USB/IP")
+        tabs.addTab(HostModeTab(), "Host Mode")
+        tabs.addTab(ClientModeTab(), "Client Mode")
+        tabs.addTab(ManagementTab(), "Management")
         tabs.addTab(JoystickTab(), "Joystick")
         self.setCentralWidget(tabs)
 
