@@ -42,6 +42,8 @@ class SystemTray(QObject):
         window.client_tab.activity.connect(lambda message: self._activity(window.client_tab, message))
         self.menu.aboutToShow.connect(self.rebuild_devices)
         self.menu.addSeparator()
+        self.about_action = self.menu.addAction("About")
+        self.about_action.triggered.connect(self.show_about)
         self.exit_action = self.menu.addAction("Exit application")
         self.exit_action.triggered.connect(window.request_exit)
         self.icon.setContextMenu(self.menu)
@@ -49,6 +51,10 @@ class SystemTray(QObject):
         self.rebuild_devices()
         if self.available():
             self.icon.show()
+
+    def show_about(self):
+        self.restore()
+        self.window.show_about()
 
     def open_tab(self, tab):
         self.window.centralWidget().setCurrentWidget(tab)

@@ -6,6 +6,7 @@ from PyQt6.QtSvg import QSvgRenderer
 
 
 PATHS = {
+    "info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.5"/>',
     "refresh": '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/>',
     "download": '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
     "remove": '<path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6m4-6v6"/>',

@@ -34,6 +34,7 @@ from client_ui import ClientModeTab
 from command_log import record_exception, record_result
 from ui_theme import APP_STYLESHEET, DeviceStateDelegate, make_button, setup_page
 from app_icon import application_icon, set_windows_app_id
+from about_ui import AboutDialog
 from system_tray import SystemTray
 
 from joystick_bridge import JoystickPacket, JoystickState
@@ -437,6 +438,8 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.joystick_tab = JoystickTab()
         tabs.addTab(self.joystick_tab, "Joystick")
         self.setCentralWidget(tabs)
+        self.management_tab.about_btn.clicked.connect(self.show_about)
+        self._about_dialog = None
         self.tray = SystemTray(self)
         self._foreground_refresh = QTimer(self)
         self._foreground_refresh.setSingleShot(True)
@@ -455,6 +458,15 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.client_tab.host_input.textChanged.connect(self._schedule_save)
         self.client_tab.tcp_port_input.valueChanged.connect(self._schedule_save)
         self.host_tab.splitter.splitterMoved.connect(self._schedule_save)
+
+    def show_about(self):
+        if self._about_dialog is None:
+            self._about_dialog = AboutDialog(self)
+            self._about_dialog.finished.connect(lambda: self.tray.menu.setEnabled(True))
+        self.tray.menu.setEnabled(False)
+        self._about_dialog.show()
+        self._about_dialog.raise_()
+        self._about_dialog.activateWindow()
 
     def _restore_preferences(self):
         host = self._settings.value("client/host", "")

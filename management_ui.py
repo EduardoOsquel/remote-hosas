@@ -37,6 +37,8 @@ class ManagementTab(QWidget):
         self.refresh_btn = make_button("Refresh status", "refresh")
         self.refresh_btn.clicked.connect(self.refresh_installation_status)
         heading.addWidget(self.refresh_btn)
+        self.about_btn = make_button("About", "info")
+        heading.addWidget(self.about_btn)
         root.addLayout(heading)
         description = QLabel("Host PC: install usbipd-win. Client PC: install usbip-win2. Install both only if this PC has both roles.")
         description.setWordWrap(True)

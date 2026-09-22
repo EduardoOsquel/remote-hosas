@@ -312,3 +312,35 @@ def test_background_query_keeps_controls_and_queues_manual_action(window):
         for _ in range(5):
             application.processEvents()
         run.assert_called_once()
+
+
+
+def test_about_available_from_window_and_tray(window):
+    _, widget, _ = window
+    widget.management_tab.about_btn.click()
+    dialog = widget._about_dialog
+    assert dialog.isVisible()
+    dialog.close()
+    widget.hide()
+    widget.tray.about_action.trigger()
+    assert widget.isVisible()
+    assert widget._about_dialog is dialog
+    assert dialog.isVisible()
+    dialog.close()
+
+
+
+def test_about_is_fixed_and_application_modal(window):
+    from PyQt6.QtCore import Qt
+    application, widget, _ = window
+    widget.show_about()
+    application.processEvents()
+    dialog = widget._about_dialog
+    assert application.activeModalWidget() is dialog
+    assert dialog.windowModality() == Qt.WindowModality.ApplicationModal
+    assert dialog.minimumSize() == dialog.maximumSize()
+    assert not widget.tray.menu.isEnabled()
+    dialog.reject()
+    application.processEvents()
+    assert widget.tray.menu.isEnabled()
+    assert application.activeModalWidget() is None
