@@ -40,7 +40,10 @@ class SystemTray(QObject):
         window.operation_gate.changed.connect(lambda: self._update_timer.start(0))
         window.host_tab.activity.connect(lambda message: self._activity(window.host_tab, message))
         window.client_tab.activity.connect(lambda message: self._activity(window.client_tab, message))
-        self.menu.aboutToShow.connect(self.rebuild_devices)
+        self.menu.aboutToShow.connect(lambda: self.rebuild_devices(force=True))
+        for popup in (self.menu, self.tabs_menu, self.share_menu, self.unshare_menu,
+                      self.connect_menu, self.disconnect_menu):
+            popup.aboutToHide.connect(lambda: self._update_timer.start(0))
         self.menu.addSeparator()
         self.about_action = self.menu.addAction("About")
         self.about_action.triggered.connect(self.show_about)
@@ -87,7 +90,13 @@ class SystemTray(QObject):
         action = menu.addAction(label.replace("&", "&&"))
         action.triggered.connect(lambda checked=False: callback())
 
-    def rebuild_devices(self):
+    def rebuild_devices(self, *, force=False):
+        # Do not destroy actions beneath the pointer while a popup is open.
+        # Device actions revalidate their identifiers and the operation gate.
+        if not force and any(popup.isVisible() for popup in
+                (self.menu, self.tabs_menu, self.share_menu, self.unshare_menu,
+                 self.connect_menu, self.disconnect_menu)):
+            return
         if self.window.operation_gate.background or self._automatic_cycle:
             return
         host, client = self.window.host_tab, self.window.client_tab
@@ -143,6 +152,7 @@ class SystemTray(QObject):
                     gate.pending_action = None
                     self._invoke(source, action)
                 gate.pending_action = retry
+                gate.prioritize_manual_action()
                 QTimer.singleShot(0, retry)
             return
         if not self._idle() or self._refresh_steps:
@@ -201,6 +211,8 @@ class SystemTray(QObject):
         return tuple(sorted(repr(device) for device in devices))
 
     def _start_quiet_refresh(self, tab, scope, action):
+        if scope == "Remote devices" and not self.remote_poll_visible():
+            return
         self._quiet_refresh = (tab, scope, self._snapshot(tab, scope))
         tab._silent_logs = []
         gate = self.window.operation_gate
@@ -233,6 +245,10 @@ class SystemTray(QObject):
             tab.log(f"{scope} updated - {len(after)} device(s) detected." +
                     (" Connection restored." if previous_errors else ""))
 
+    def remote_poll_visible(self):
+        return (self.window.isVisible() and not self.window.isMinimized()
+                and self.window.centralWidget().currentWidget() is self.window.client_tab)
+
     def refresh_devices(self, checked=False, *, automatic=False):
         if not self._idle() or self._refresh_steps:
             return
@@ -240,7 +256,7 @@ class SystemTray(QObject):
         client = self.window.client_tab
         steps = [(self.window.host_tab, "Host devices", self.window.host_tab.refresh_usbipd_devices),
                  (client, "Imported devices", client.refresh_imported_devices)]
-        if client._endpoint()[0]:
+        if client._endpoint()[0] and (not automatic or self.remote_poll_visible()):
             steps.append((client, "Remote devices", client.refresh_remote_devices))
         self._refresh_steps = [
             (lambda tab=tab, scope=scope, action=action: self._start_quiet_refresh(tab, scope, action))

@@ -388,3 +388,65 @@ def test_exit_recovers_from_unexpected_cleanup_exception(window):
     assert widget.centralWidget().isEnabled()
     assert not widget._shutdown_pending
     quit_app.assert_not_called()
+
+
+
+@pytest.mark.parametrize("page,hidden,expected", [("host_tab", False, False),
+    ("management_tab", False, False), ("client_tab", False, True),
+    ("client_tab", True, False)])
+def test_remote_poll_only_for_visible_client(window, page, hidden, expected):
+    application, widget, _ = window
+    widget.client_tab.host_input.setText("saved-host")
+    widget.centralWidget().setCurrentWidget(getattr(widget, page))
+    if hidden:
+        widget.hide()
+    with patch.object(widget.host_tab, "refresh_usbipd_devices"), \
+         patch.object(widget.client_tab, "refresh_imported_devices"), \
+         patch.object(widget.client_tab, "refresh_remote_devices") as remote:
+        widget.tray.refresh_devices(automatic=True)
+        for _ in range(8):
+            application.processEvents()
+        assert remote.call_count == int(expected)
+
+
+def test_remote_query_is_skipped_if_user_leaves_client_before_queued_step(window):
+    _, widget, _ = window
+    widget.centralWidget().setCurrentWidget(widget.host_tab)
+    with patch.object(widget.client_tab, "refresh_remote_devices") as remote:
+        widget.tray._start_quiet_refresh(widget.client_tab, "Remote devices", remote)
+        remote.assert_not_called()
+
+
+def test_manual_tray_refresh_still_queries_remote_from_host(window):
+    application, widget, _ = window
+    widget.client_tab.host_input.setText("saved-host")
+    with patch.object(widget.host_tab, "refresh_usbipd_devices"), \
+         patch.object(widget.client_tab, "refresh_imported_devices"), \
+         patch.object(widget.client_tab, "refresh_remote_devices") as remote:
+        widget.tray.refresh_devices()
+        for _ in range(8):
+            application.processEvents()
+        remote.assert_called_once()
+
+
+
+def test_open_tray_menu_keeps_actions_stable_during_refresh(window):
+    from PyQt6.QtCore import QPoint
+    from usbip_manager import UsbipDevice
+    application, widget, _ = window
+    tray, host = widget.tray, widget.host_tab
+    host._set_devices([UsbipDevice("1-1", "Stick", state="Not shared")])
+    tray.menu.popup(QPoint(20, 20))
+    application.processEvents()
+    original = tray.share_menu.actions()[0]
+    host.devices = [UsbipDevice("1-2", "Camera", state="Not shared")]
+    tray.rebuild_devices()
+    assert tray.share_menu.actions()[0] is original
+    assert original.text() == "1-1 - Stick"
+    with patch.object(host, "bind_selected_device") as bind:
+        original.trigger()
+        bind.assert_not_called()
+    tray.menu.hide()
+    application.processEvents()
+    tray.rebuild_devices()
+    assert tray.share_menu.actions()[0].text() == "1-2 - Camera"

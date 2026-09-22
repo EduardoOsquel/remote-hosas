@@ -242,3 +242,39 @@ def test_shutdown_reports_busy_client_instead_of_waiting_forever(client):
     widget.disconnect_before_exit(result.append)
     assert result == [False]
     widget._process = None
+
+
+
+def test_background_remote_query_yields_without_clearing_devices(client):
+    from usbip_manager import UsbipDevice
+    _, widget = client
+    application = QApplication.instance()
+    widget.devices = [UsbipDevice("1-3", "Known device")]
+    widget.gate.background = True
+    with patch("client_ui.resolve_usbip_client", return_value=sys.executable):
+        widget._run("List remote devices", ["usbip", "-c", "import time; time.sleep(20)"])
+    assert widget._timer.interval() == 5000
+    start = time.monotonic()
+    widget.gate.prioritize_manual_action()
+    while widget.is_busy and time.monotonic() - start < 3:
+        application.processEvents()
+        time.sleep(.005)
+    assert not widget.is_busy
+    assert time.monotonic() - start < 3
+    assert widget.devices[0].busid == "1-3"
+    assert "[ERROR]" not in widget.log_widget.toPlainText()
+    assert widget.gate.owner is None
+    widget.gate.background = False
+
+
+def test_manual_action_cannot_be_cancelled_as_background(client):
+    from unittest.mock import MagicMock
+    _, widget = client
+    process = MagicMock()
+    widget._process = process
+    widget._label = "Attach device"
+    widget.gate.background = True
+    widget.cancel_background_query()
+    process.kill.assert_not_called()
+    widget._process = None
+    widget.gate.background = False

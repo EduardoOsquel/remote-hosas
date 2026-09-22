@@ -20,6 +20,12 @@ class OperationGate(QObject):
         if self.owner is owner:
             self.owner = None
             self.changed.emit()
+    def prioritize_manual_action(self):
+        if self.background and self.owner is not None:
+            cancel = getattr(self.owner, "cancel_background_query", None)
+            if cancel is not None:
+                cancel()
+
     def available(self, owner):
         return self.owner is None or self.owner is owner
 
@@ -46,6 +52,7 @@ def defer_background_action(method):
                     gate.pending_action = None
                     method(self, *args, **kwargs)
                 gate.pending_action = retry
+                gate.prioritize_manual_action()
                 QTimer.singleShot(0, retry)
             return
         return method(self, *args, **kwargs)

@@ -452,6 +452,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self._foreground_refresh.setSingleShot(True)
         self._foreground_refresh.setInterval(1000)
         self._foreground_refresh.timeout.connect(self._refresh_external_state)
+        tabs.currentChanged.connect(self._active_page_changed)
         self._periodic_refresh = QTimer(self)
         self._periodic_refresh.setInterval(30000)
         self._periodic_refresh.timeout.connect(self._refresh_external_state)
@@ -517,6 +518,18 @@ class UsbipJoystickBridgeApp(QMainWindow):
         if self._settings.status() != QSettings.Status.NoError:
             self.statusBar().showMessage("Unable to save preferences. Check your user profile permissions.", 8000)
 
+
+    def _active_page_changed(self, *args):
+        if self.tray.remote_poll_visible():
+            self._foreground_refresh.start()
+        elif (self.operation_gate.background
+              and getattr(self.client_tab, "_label", None) == "List remote devices"):
+            self.client_tab.cancel_background_query()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if hasattr(self, "_foreground_refresh"):
+            self._active_page_changed()
 
     def _refresh_external_state(self):
         if self.tray._idle() and not self.tray._refresh_steps:
@@ -588,6 +601,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self._shutdown_cleanup_started = False
         self.operation_gate.shutting_down = True
         self.operation_gate.pending_action = None
+        self.operation_gate.prioritize_manual_action()
         self._periodic_refresh.stop()
         self._foreground_refresh.stop()
         self.tray._refresh_steps.clear()

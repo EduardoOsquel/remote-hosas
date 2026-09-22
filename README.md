@@ -270,3 +270,17 @@ window reports cleanup and offers Cancel exit. A 100-second overall deadline
 returns control if cleanup cannot complete. Cancellation does not reconnect devices
 already detached; host shares are untouched. Busy/failed command dispatch always
 reports failure to the exit workflow instead of leaving it waiting for a callback.
+
+Manual actions (including tray actions and exit) now interrupt active Client
+background list queries rather than waiting for a remote connection timeout.
+Cancellation preserves the last device list and does not emit a query error.
+Only read-only background queries are interruptible; attach/detach, sharing and
+installation commands are not cancelled this way. Automatic remote queries use
+a five-second timeout; manually requested queries retain their 30-second limit.
+
+Automatic remote host polling runs only while Client Mode is the visible tab.
+Leaving Client Mode or hiding the window cancels an in-flight automatic remote
+query, and queued remote polls recheck visibility before starting. A saved IP alone
+does not trigger network queries in Host Mode. Local host/import checks continue
+for accurate sharing and connection state. Manual tray Refresh devices still
+queries the configured host. Entering Client Mode schedules a debounced refresh.

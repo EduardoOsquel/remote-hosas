@@ -290,14 +290,23 @@ class ClientModeTab(QWidget):
         self._callback, self._after = callback, after
         self._on_failure = on_failure
         self._timed_out = False
+        self._background_cancelled = False
         process = QProcess(self)
         self._process = process
         process.finished.connect(self._finished)
         process.errorOccurred.connect(self._error)
         self.log(f"> {label}")
         self._update_controls()
-        self._timer.start(30000)
+        self._timer.start(5000 if self.gate.background and label == "List remote devices" else 30000)
         process.start(command[0], command[1:])
+
+    def cancel_background_query(self):
+        """Yield a read-only poll to user actions without clearing known devices."""
+        if (self.gate.background and self._process is not None
+                and self._label in {"List remote devices", "List imported devices"}):
+            self._background_cancelled = True
+            self._timer.stop()
+            self._process.kill()
 
     def _timeout(self):
         if self._process:
@@ -321,6 +330,9 @@ class ClientModeTab(QWidget):
 
     def _finished(self, code, status):
         if self._process is None:
+            return
+        if self._background_cancelled:
+            self._cleanup()
             return
         output = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
         error = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
