@@ -119,6 +119,8 @@ def test_share_menus_filter_states_and_route_selected_busid(window):
                        UsbipDevice("1-2", "Camera", state="Shared"),
                        UsbipDevice("1-3", "Adapter", state="Attached")])
     tray.rebuild_devices()
+    assert tray.share_menu.actions()[0].text() == "1-1 - Controller"
+    assert tray.share_menu.icon().isNull()
     assert len(tray.share_menu.actions()) == 1
     assert len(tray.unshare_menu.actions()) == 2
     with patch.object(host, "bind_selected_device") as bind:
@@ -206,6 +208,6 @@ def test_missing_host_offers_configuration(window):
     tray = widget.tray
     widget.client_tab.host_input.clear()
     tray.rebuild_devices()
-    assert tray.connect_menu.actions()[0].text() == "Configure remote host?"
+    assert tray.connect_menu.actions()[0].text() == "Configure remote host..."
     tray.connect_menu.actions()[0].trigger()
     assert widget.centralWidget().currentWidget() is widget.client_tab

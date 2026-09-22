@@ -38,7 +38,13 @@ class ClientModeTab(QWidget):
         self.tcp_port_input.setRange(1024, 65535)
         self.tcp_port_input.setValue(USBIP_TCP_PORT)
         self.tcp_port_input.setToolTip("usbipd-win listens on TCP 3240. Change only for an explicitly configured port forward.")
-        form.addRow("Remote host", self.host_input)
+        host_row = QHBoxLayout()
+        host_row.addWidget(self.host_input, 1)
+        self.local_host_btn = make_button("Use this PC", "connect")
+        self.local_host_btn.setToolTip("List devices shared by usbipd-win on this PC using 127.0.0.1 and TCP 3240.")
+        self.local_host_btn.clicked.connect(self.use_local_host)
+        host_row.addWidget(self.local_host_btn)
+        form.addRow("Remote host", host_row)
         form.addRow("Server TCP port", self.tcp_port_input)
         self.device_combo = QComboBox()
         self.device_combo.setMinimumContentsLength(24)
@@ -103,6 +109,13 @@ class ClientModeTab(QWidget):
         self.log_widget.setTextCursor(cursor)
         self.log_widget.ensureCursorVisible()
 
+    def use_local_host(self):
+        if self.is_busy or not self.gate.available(self):
+            return
+        self.host_input.setText("127.0.0.1")
+        self.tcp_port_input.setValue(USBIP_TCP_PORT)
+        self.refresh_remote_devices()
+
     def _endpoint(self):
         return self.host_input.text().strip(), self.tcp_port_input.value()
 
@@ -116,6 +129,7 @@ class ClientModeTab(QWidget):
     def _update_controls(self):
         idle = not self.is_busy and self.gate.available(self)
         self.host_input.setEnabled(idle)
+        self.local_host_btn.setEnabled(idle)
         self.tcp_port_input.setEnabled(idle)
         self.list_btn.setEnabled(idle and bool(self.host_input.text().strip()))
         self.device_combo.setEnabled(idle and bool(self.devices))
@@ -277,6 +291,13 @@ class ClientModeTab(QWidget):
             code = code or -1
         callback, after, failed = self._callback, self._after, self._on_failure
         self.log(record_result(self._label, self._command, code, output, error))
+        if code != 0 and self._label == "List remote devices":
+            host, port = self._endpoint()
+            self.log(f"Unable to list devices from {host}:{port}. Check the host name or IP address. "
+                     "For this computer, click Use this PC (127.0.0.1). For another computer, enter its IP address or DNS name. "
+                     "Also check that its USB/IP service is running and reachable.")
+            if host.lower() == "locahost":
+                self.log("Did you mean localhost? The entered name is locahost (missing the second l).")
         if self._timed_out:
             self.log("The command timed out. Check the host address, USB/IP service and TCP 3240 firewall access.")
         self._cleanup()

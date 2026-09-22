@@ -196,3 +196,28 @@ def test_refresh_after_action_checks_local_ports_then_remote_exports(client):
     assert commands == [["usbip", "port"], ["usbip", "--tcp-port=3240", "list", "-r", "host-pc"]]
     assert widget.port_input.currentData() == 7
     assert widget.device_combo.currentData() == "1-3"
+
+
+def test_use_this_pc_corrects_endpoint_and_lists_devices(client):
+    _, widget = client
+    widget.host_input.setText("locahost")
+    widget.tcp_port_input.setValue(4321)
+    with simulate(widget, REMOTE) as run:
+        widget.local_host_btn.click()
+    assert widget.host_input.text() == "127.0.0.1"
+    assert widget.tcp_port_input.value() == 3240
+    assert run.call_args.args[1] == ["usbip", "--tcp-port=3240", "list", "-r", "127.0.0.1"]
+    assert widget.devices[0].busid == "1-3"
+    assert widget.attach_btn.isEnabled()
+
+
+def test_local_host_shortcut_respects_management_lock(client):
+    _, widget = client
+    owner = object()
+    widget.gate.acquire(owner)
+    assert not widget.local_host_btn.isEnabled()
+    with patch.object(widget, "_run") as run:
+        widget.use_local_host()
+        run.assert_not_called()
+    assert widget.host_input.text() == ""
+    widget.gate.release(owner)

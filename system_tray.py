@@ -1,7 +1,7 @@
 """Tray lifetime and close choices; hiding never stops background work."""
 
 from PyQt6.QtCore import QObject, QTimer
-from ui_icons import line_icon
+from app_icon import APP_NAME
 from PyQt6.QtWidgets import QMenu, QMessageBox, QSystemTrayIcon
 
 
@@ -11,7 +11,7 @@ class SystemTray(QObject):
         self.window = window
         self.restore_maximized = False
         self.icon = QSystemTrayIcon(window.windowIcon(), self)
-        self.icon.setToolTip("USB/IP + Joystick Bridge - running")
+        self.icon.setToolTip("USB/IP + Joystick Bridge")
         self.menu = QMenu(window)
         self.show_action = self.menu.addAction("Show application")
         self.show_action.triggered.connect(self.restore)
@@ -28,11 +28,7 @@ class SystemTray(QObject):
         self.disconnect_all_action = self.menu.addAction("Disconnect all")
         self.disconnect_all_action.triggered.connect(self.disconnect_all)
         self.refresh_action = self.menu.addAction("Refresh devices")
-        self.refresh_action.setIcon(line_icon("refresh"))
         self.refresh_action.triggered.connect(self.refresh_devices)
-        for menu, icon in ((self.share_menu, "share"), (self.unshare_menu, "disconnect"),
-                           (self.connect_menu, "connect"), (self.disconnect_menu, "disconnect")):
-            menu.setIcon(line_icon(icon))
         self._refresh_steps = []
         self._notification_source = None
         self._update_timer = QTimer(self)
@@ -85,7 +81,7 @@ class SystemTray(QObject):
             menu.clear()
         if not idle:
             for menu in (self.share_menu, self.unshare_menu, self.connect_menu, self.disconnect_menu):
-                self._placeholder(menu, "Loading?" if self._refresh_steps else "An operation is in progress?")
+                self._placeholder(menu, "Loading..." if self._refresh_steps else "An operation is in progress...")
         else:
             for device in host.devices:
                 if device.state == "Not shared":
@@ -94,24 +90,24 @@ class SystemTray(QObject):
                     menu, share = self.unshare_menu, False
                 else:
                     continue
-                self._device_action(menu, f"{device.name} ? {device.busid}",
+                self._device_action(menu, f"{device.busid} - {device.name}",
                     lambda busid=device.busid, share=share: self.share_device(busid, share))
             endpoint = client._endpoint()
             if not endpoint[0]:
-                self._device_action(self.connect_menu, "Configure remote host?",
+                self._device_action(self.connect_menu, "Configure remote host...",
                                     lambda: self.open_tab(client))
             elif client._listed_endpoint != endpoint:
-                self._device_action(self.connect_menu, "List remote devices?", self.refresh_devices)
+                self._device_action(self.connect_menu, "List remote devices...", self.refresh_devices)
             else:
                 self._placeholder(self.connect_menu, f"Host: {endpoint[0]}:{endpoint[1]}")
                 for device in client.devices:
-                    self._device_action(self.connect_menu, f"{device.name} ? {device.busid}",
+                    self._device_action(self.connect_menu, f"{device.busid} - {device.name}",
                         lambda busid=device.busid, endpoint=endpoint: self.connect_device(busid, endpoint))
                 if not client.devices:
                     self._placeholder(self.connect_menu, "No devices available")
             for device in client.imported_devices:
                 self._device_action(self.disconnect_menu,
-                    f"{device.name} ? Port {device.port} ? {device.location}",
+                    f"Port {device.port} - {device.name} - {device.location}",
                     lambda port=device.port, location=device.location: self.disconnect_device(port, location))
             for menu in (self.share_menu, self.unshare_menu, self.disconnect_menu):
                 if not menu.actions():
@@ -130,7 +126,7 @@ class SystemTray(QObject):
         if source is self._notification_source and message.startswith(("[OK]", "[ERROR]")):
             self._notification_source = None
             error = message.startswith("[ERROR]")
-            self.icon.showMessage("USB/IP + Joystick Bridge", message,
+            self.icon.showMessage(APP_NAME, message,
                 QSystemTrayIcon.MessageIcon.Warning if error else QSystemTrayIcon.MessageIcon.Information)
         self._update_timer.start(0)
 
