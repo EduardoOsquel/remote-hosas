@@ -16,6 +16,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.request import Request, urlopen
+from restore_point import create_restore_point, RestorePointError
 
 
 LATEST_URL = "https://api.github.com/repos/vadimgrn/usbip-win2/releases/latest"
@@ -188,7 +189,7 @@ try {
     return code
 
 
-def install(notify):
+def install(notify, create_restore=True):
     architecture = supported_architecture()
     if find_client_installation():
         raise InstallError("usbip-win2 is already installed. Refresh the component status.")
@@ -206,6 +207,10 @@ def install(notify):
     with tempfile.TemporaryDirectory(prefix="remote-hosas-usbip-") as directory:
         installer = Path(directory) / asset["name"]
         download_asset(asset, installer, notify)
+        if create_restore:
+            create_restore_point(notify, powershell)
+        else:
+            notify("Restore-point creation was explicitly skipped. Installing without a new restore point.")
         notify("Download verified. Starting installation; Windows may request administrator access.")
         code = run_installer(installer)
     if not find_client_installation():
@@ -231,10 +236,16 @@ def main():
     def notify(message):
         print(json.dumps({"message": message}), flush=True)
     try:
-        action = sys.argv[1] if len(sys.argv) == 2 else ""
+        args = sys.argv[1:]
+        action = args[0] if args else ""
+        if args not in (["install"], ["install", "--skip-restore-point"], ["uninstall"]):
+            raise InstallError("Unknown installation action.")
         if action not in ("install", "uninstall"):
             raise InstallError("Unknown installation action.")
-        return (install if action == "install" else uninstall)(notify)
+        return install(notify, create_restore="--skip-restore-point" not in args) if action == "install" else uninstall(notify)
+    except RestorePointError as error:
+        notify(f"[ERROR] {error}")
+        return 50
     except InstallError as error:
         notify(f"[ERROR] {error}")
     except Exception as error:

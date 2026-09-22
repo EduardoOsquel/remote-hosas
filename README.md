@@ -31,6 +31,7 @@ The previous `python usbip_ui.py` entry point opens the same application.
 - `command_log.py`: English command summaries and original diagnostic output.
 - `usbip_manager.py`: USB/IP command builders and device-list parsing.
 - `usbip_installer.py`: official release selection, verified downloads and installer execution.
+- `restore_point.py`: elevated Windows restore-point creation and verification.
 - `joystick_bridge.py`: joystick state and packet serialization.
 - `usbip_ui.py`: compatibility launcher.
 - `tests/`: command, serialization and UI regression tests.
@@ -92,6 +93,23 @@ vendor's installer, do not automatically restart Windows, and refresh detection
 after completion. USB devices may briefly reconnect during driver installation.
 No test-signing or Secure Boot settings are changed by this application.
 
+Before usbip-win2 installation, **Create a restore point** is checked by default.
+Management explains why the driver publisher recommends this step. After download
+verification and before running the installer, Windows PowerShell requests
+administrator approval and creates a uniquely named `DEVICE_DRIVER_INSTALL` point.
+The helper verifies that its description and new sequence number appear in Windows'
+restore-point list. A successful process launch alone is not treated as success.
+
+If Windows already has a point from the previous 24 hours, System Protection is
+unavailable, elevation is declined, or verification fails, driver installation stops.
+The log explains the reason. The user may cancel and fix System Protection, or
+explicitly confirm installation without a new point; the confirmation defaults to
+No. Unchecking the option also requires this confirmation. No protection settings,
+restore-point frequency limits or existing restore points are changed automatically.
+The point concerns system changes and is not a personal-file backup. A second UAC
+prompt may appear for driver installation. The standalone installer helper defaults
+to creating a point too; `install --skip-restore-point` is an explicit opt-out.
+
 Compatibility policy: the installed usbipd-win version is read and reported, but
 upstream publishes no version-pair compatibility matrix. The latest stable client
 is selected according to the documented Windows requirements (Windows 10 build
@@ -137,3 +155,5 @@ processes to verify responsiveness and English summaries; they do not install or
 uninstall components. Installer tests mock downloads, registry detection and
 installer execution, including integrity failures, missing installations and UAC
 cancellation. A real driver installation is not part of the test suite.
+Restore-point creation is also simulated. PowerShell tests parse the scripts
+without running their system-changing instructions.

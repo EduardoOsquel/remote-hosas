@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QProcess
 from PyQt6.QtWidgets import (
-    QFileDialog, QFrame, QHBoxLayout, QLabel, QProgressBar, QTextEdit,
+    QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QProgressBar, QTextEdit,
     QVBoxLayout, QWidget,
 )
 
@@ -66,6 +66,17 @@ class ManagementTab(QWidget):
         cards.addWidget(host_card, 1)
         cards.addWidget(client_card, 1)
         root.addLayout(cards)
+
+        self.restore_check = QCheckBox("Create a restore point before installing usbip-win2 (recommended)")
+        self.restore_check.setChecked(True)
+        root.addWidget(self.restore_check)
+        restore_help = QLabel(
+            "usbip-win2 installs USB drivers. Its developers recommend a Windows restore point so you can "
+            "roll back system changes if a driver causes problems. This uses Windows System Protection; "
+            "it does not install another program or back up personal files. Administrator approval is required.")
+        restore_help.setWordWrap(True)
+        restore_help.setProperty("role", "muted")
+        root.addWidget(restore_help)
 
         self.operation_status = QLabel("Ready")
         self.operation_status.setProperty("role", "muted")
@@ -180,6 +191,7 @@ class ManagementTab(QWidget):
         self.uninstall_usbip_win2_btn.setToolTip("Uninstall usbip-win2." if installation and installation.uninstaller else
                                                 "No registered usbip-win2 uninstaller was found.")
         self.refresh_btn.setEnabled(not busy)
+        self.restore_check.setEnabled(not busy and not client)
 
     def _start_command(self, label, command, success_message=None, client_action=False):
         if self._process is not None:
@@ -237,6 +249,9 @@ class ManagementTab(QWidget):
         self.operation_status.setText("Completed - restart Windows." if reboot else
                                      "Completed" if exit_code == 0 else "Action failed. See the activity log.")
         self._finish_command()
+        if self._client_action and exit_code == 50 and "install" in self._command:
+            if self._confirm_without_restore_point(failed=True):
+                self._launch_client_install(create_restore=False)
 
     def _command_error(self, error):
         if error == QProcess.ProcessError.FailedToStart and self._process is not None:
@@ -260,7 +275,28 @@ class ManagementTab(QWidget):
     def install_usbip_win2(self):
         if self.is_busy or self._is_usbip_win2_installed():
             return
-        self._start_command("Install usbip-win2", build_usbip_win2_install_command(), client_action=True)
+        create_restore = self.restore_check.isChecked()
+        if not create_restore and not self._confirm_without_restore_point():
+            return
+        self._launch_client_install(create_restore)
+
+    def _confirm_without_restore_point(self, failed=False):
+        reason = ("A new restore point could not be verified. Driver installation has not started. "
+                  "See the activity log for the reason. You can cancel, enable System Protection "
+                  "in Windows (Create a restore point > Configure), and retry.\n\n" if failed else "")
+        return QMessageBox.warning(
+            self, "Install without a new restore point?",
+            reason + "The usbip-win2 developers recommend a restore point before installing USB drivers. "
+            "Without one, you may not be able to roll back these changes using System Restore.\n\n"
+            "Continue installation without creating a new restore point?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes
+
+    def _launch_client_install(self, create_restore=True):
+        command = build_usbip_win2_install_command()
+        if not create_restore:
+            command.append("--skip-restore-point")
+        self._start_command("Install usbip-win2", command, client_action=True)
 
     def uninstall_usbip_win2(self):
         installation = find_client_installation()

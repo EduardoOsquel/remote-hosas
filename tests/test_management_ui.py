@@ -10,10 +10,39 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QMessageBox
 
 from command_log import DIAGNOSTICS
 from management_ui import ManagementTab
 from usbip_installer import ClientInstallation
+
+
+def test_restore_option_defaults_on_and_skip_requires_confirmation(management):
+    _, widget = management
+    assert widget.restore_check.isChecked()
+    widget.restore_check.setChecked(False)
+    with patch("management_ui.QMessageBox.warning", return_value=QMessageBox.StandardButton.No), \
+            patch.object(widget, "_start_command") as start:
+        widget.install_usbip_win2()
+        start.assert_not_called()
+    with patch("management_ui.QMessageBox.warning", return_value=QMessageBox.StandardButton.Yes), \
+            patch.object(widget, "_start_command") as start:
+        widget.install_usbip_win2()
+        assert start.call_args.args[1][-1] == "--skip-restore-point"
+
+
+@pytest.mark.parametrize("continue_without", [False, True])
+def test_restore_failure_only_restarts_install_after_confirmation(management, continue_without):
+    application, widget = management
+    with patch.object(widget, "_confirm_without_restore_point", return_value=continue_without) as confirm, \
+            patch.object(widget, "_launch_client_install") as launch:
+        widget._start_command("Test restore failure", [sys.executable, "-c", "raise SystemExit(50)", "install"], client_action=True)
+        wait_for_action(application, widget)
+        confirm.assert_called_once_with(failed=True)
+        if continue_without:
+            launch.assert_called_once_with(create_restore=False)
+        else:
+            launch.assert_not_called()
 
 
 @pytest.fixture

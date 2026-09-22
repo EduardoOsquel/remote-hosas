@@ -4,6 +4,13 @@ from unittest.mock import patch
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def simulate_restore_point():
+    # Tests must never create real system restore points or request elevation.
+    with patch("usbip_installer.create_restore_point") as create:
+        yield create
+
 from usbip_installer import (ClientInstallation, DOWNLOAD_PREFIX, InstallError, download_asset,
                              LATEST_URL, install, run_installer, select_asset, supported_architecture, uninstall)
 
@@ -151,3 +158,32 @@ def test_powershell_installer_script_parses_without_execution(tmp_path):
                             env={**os.environ, "USBIP_SCRIPT_TO_CHECK": script},
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_restore_failure_blocks_installer():
+    import json
+    from restore_point import RestorePointError
+    with patch("usbip_installer.supported_architecture", return_value="x64"), \
+            patch("usbip_installer.host_version", return_value=None), \
+            patch("usbip_installer.find_client_installation", return_value=None), \
+            patch("usbip_installer.request", return_value=BytesIO(json.dumps(release()).encode())), \
+            patch("usbip_installer.download_asset"), \
+            patch("usbip_installer.create_restore_point", side_effect=RestorePointError("Unavailable")), \
+            patch("usbip_installer.run_installer") as run, pytest.raises(RestorePointError):
+        install(lambda message: None)
+    run.assert_not_called()
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_restore_point_precedes_installer_unless_explicitly_skipped(enabled):
+    import json
+    order = []
+    with patch("usbip_installer.supported_architecture", return_value="x64"), \
+            patch("usbip_installer.host_version", return_value=None), \
+            patch("usbip_installer.find_client_installation", side_effect=[None, ClientInstallation("0.9.8.0", None)]), \
+            patch("usbip_installer.request", return_value=BytesIO(json.dumps(release()).encode())), \
+            patch("usbip_installer.download_asset"), \
+            patch("usbip_installer.create_restore_point", side_effect=lambda *args: order.append("restore")), \
+            patch("usbip_installer.run_installer", side_effect=lambda *args: order.append("install") or 0):
+        install(lambda message: None, create_restore=enabled)
+    assert order == (["restore", "install"] if enabled else ["install"])
