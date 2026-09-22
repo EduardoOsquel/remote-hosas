@@ -27,6 +27,8 @@ try:
 except ImportError:  # pragma: no cover
     pygame = None
 
+from operation_gate import OperationGate
+from host_commands import HostWorker
 from management_ui import ManagementTab
 from client_ui import ClientModeTab
 from command_log import record_exception, record_result
@@ -44,8 +46,10 @@ from usbip_manager import (
 
 
 class HostModeTab(QWidget):
-    def __init__(self) -> None:
+    def __init__(self, gate=None) -> None:
         super().__init__()
+        self.gate = gate or OperationGate()
+        self._worker = None
         self.devices: List[UsbipDevice] = []
         self._log_buffer: List[str] = []
 
@@ -95,7 +99,7 @@ class HostModeTab(QWidget):
         self.list_btn.clicked.connect(self.refresh_usbipd_devices)
         self.bind_btn = self._make_button("Bind / Share", "share")
         self.bind_btn.clicked.connect(self.bind_selected_device)
-        self.unbind_btn = self._make_button("Unbind / Stop Sharing", "disconnect")
+        self.unbind_btn = self._make_button("Unbind / Stop sharing", "disconnect")
         self.unbind_btn.clicked.connect(self.unbind_selected_device)
         actions.addWidget(self.list_btn)
         actions.addWidget(self.bind_btn)
@@ -122,7 +126,9 @@ class HostModeTab(QWidget):
         self.splitter.setSizes([480, 160])
         root.addWidget(self.splitter, 1)
 
-        self.refresh_usbipd_devices()
+        self.gate.changed.connect(self._update_controls)
+        self._update_controls()
+        QTimer.singleShot(0, self.refresh_usbipd_devices)
 
     _make_button = staticmethod(make_button)
 
@@ -133,14 +139,59 @@ class HostModeTab(QWidget):
         self.log_widget.setPlainText("\n".join(self._log_buffer))
         self.log_widget.verticalScrollBar().setValue(self.log_widget.verticalScrollBar().maximum())
 
-    def run_command(self, label: str, command: List[str]) -> None:
-        try:
-            self.log(f"> {label}")
-            self.log(f"Running: {' '.join(command)}")
-            result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", shell=False, check=False)
+    @property
+    def is_busy(self):
+        return self._worker is not None
+
+    def _update_controls(self):
+        idle = not self.is_busy and self.gate.available(self)
+        self.list_btn.setEnabled(idle)
+        self.device_combo.setEnabled(idle and bool(self.devices))
+        self.bind_btn.setEnabled(idle and bool(self.devices))
+        self.unbind_btn.setEnabled(idle and bool(self.devices))
+
+    def run_command(self, label, command, refresh=False):
+        if self.is_busy or not self.gate.acquire(self):
+            self.log("Wait for the current USB/IP or management action to finish.")
+            return
+        self._start_host_command(label, command, refresh)
+
+    def _start_host_command(self, label, command, refresh):
+        self.log(f"> {label}")
+        if refresh:
+            self.log("Administrator approval may be requested. Cancelling leaves sharing unchanged.")
+        worker = HostWorker(command, self)
+        self._worker = worker
+        self._update_controls()
+        worker.finished.connect(lambda: self._host_finished(worker, label, command, refresh))
+        worker.start()
+
+    def _host_finished(self, worker, label, command, refresh):
+        result = worker.result
+        if worker.error is not None:
+            self.log(record_exception(label, command, worker.error))
+            if isinstance(worker.error, subprocess.TimeoutExpired):
+                self.log("The host command timed out after 30 seconds. Refresh to check its actual state.")
+        else:
             self.log(record_result(label, command, result.returncode, result.stdout, result.stderr))
-        except Exception as exc:
-            self.log(record_exception(label, command, exc))
+            if result.returncode == 1223:
+                self.log("Administrator approval was cancelled. No sharing change was requested.")
+            elif result.returncode == 1460:
+                self.log("The host command timed out after 30 seconds. Checking actual sharing state.")
+        if not refresh:
+            if worker.error is None and result.returncode == 0:
+                self._set_devices(parse_usbipd_list(result.stdout))
+                shared = sum(d.state in {"Shared", "Shared (forced)", "Attached"} for d in self.devices)
+                self.log(f"Shared host devices: {shared}. Sharing remains enabled when this application exits.")
+            else:
+                self._set_devices([], "Unable to list devices")
+        self._worker = None
+        worker.deleteLater()
+        if refresh:
+            self._start_host_command("List USB devices", ["usbipd", "list"], False)
+        else:
+            self.gate.release(self)
+            self._update_controls()
 
     def _select_table_device(self) -> None:
         row = self.device_table.currentRow()
@@ -179,21 +230,8 @@ class HostModeTab(QWidget):
         self.unbind_btn.setEnabled(bool(devices))
         self.device_count.setText(f"Local USB devices - {len(devices)} detected")
 
-    def refresh_usbipd_devices(self) -> None:
-        self.log("> List usbipd devices")
-        try:
-            result = subprocess.run(["usbipd", "list"], capture_output=True, text=True, encoding="utf-8", errors="replace", shell=False, check=False)
-            if result.returncode != 0:
-                self._set_devices([], "Unable to list devices")
-                self.log(record_result("List USB devices", ["usbipd", "list"], result.returncode, result.stdout, result.stderr))
-                return
-            self._set_devices(parse_usbipd_list(result.stdout))
-            self.log(f"[OK] Detected {len(self.devices)} USB device(s).")
-            shared = sum(device.state in {"Shared", "Shared (forced)", "Attached"} for device in self.devices)
-            self.log(f"Shared host devices: {shared}. Sharing remains enabled when this application exits.")
-        except Exception as exc:
-            self._set_devices([], "Unable to list devices")
-            self.log(record_exception("List USB devices", ["usbipd", "list"], exc))
+    def refresh_usbipd_devices(self):
+        self.run_command("List USB devices", ["usbipd", "list"])
 
     def bind_selected_device(self) -> None:
         idx = self.device_combo.currentIndex()
@@ -201,8 +239,7 @@ class HostModeTab(QWidget):
             QMessageBox.warning(self, "Warning", "Select a device from the list.")
             return
         busid = self.devices[idx].busid
-        self.run_command(f"Bind device {busid}", build_usbipd_bind_command(busid))
-        self.refresh_usbipd_devices()
+        self.run_command(f"Bind device {busid}", build_usbipd_bind_command(busid), refresh=True)
 
     def unbind_selected_device(self) -> None:
         idx = self.device_combo.currentIndex()
@@ -210,8 +247,7 @@ class HostModeTab(QWidget):
             QMessageBox.warning(self, "Warning", "Select a device from the list.")
             return
         busid = self.devices[idx].busid
-        self.run_command(f"Unbind device {busid}", build_usbipd_unbind_command(busid))
-        self.refresh_usbipd_devices()
+        self.run_command(f"Unbind device {busid}", build_usbipd_unbind_command(busid), refresh=True)
 
 
 class JoystickTab(QWidget):
@@ -343,10 +379,12 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.setMinimumSize(900, 680)
 
         tabs = QTabWidget()
-        tabs.addTab(HostModeTab(), "Host Mode")
-        self.client_tab = ClientModeTab()
+        self.operation_gate = OperationGate()
+        self.host_tab = HostModeTab(self.operation_gate)
+        tabs.addTab(self.host_tab, "Host Mode")
+        self.client_tab = ClientModeTab(self.operation_gate)
         tabs.addTab(self.client_tab, "Client Mode")
-        self.management_tab = ManagementTab()
+        self.management_tab = ManagementTab(self.operation_gate)
         tabs.addTab(self.management_tab, "Management")
         self.joystick_tab = JoystickTab()
         tabs.addTab(self.joystick_tab, "Joystick")
@@ -384,6 +422,12 @@ class UsbipJoystickBridgeApp(QMainWindow):
             event.ignore()
             if choice == "tray":
                 self.tray.hide_window()
+            return
+        if self.host_tab.is_busy:
+            self.tray.restore()
+            self.centralWidget().setCurrentWidget(self.host_tab)
+            self.host_tab.log("Wait for the current host action to finish before closing.")
+            event.ignore()
             return
         if self.client_tab.is_busy:
             self.tray.restore()
@@ -427,7 +471,12 @@ def main() -> None:
     app.setWindowIcon(application_icon())
     window = UsbipJoystickBridgeApp()
     window.show()
-    QTimer.singleShot(0, window.client_tab.refresh_imported_devices)
+    def refresh_client_when_idle():
+        if window.operation_gate.owner is not None:
+            QTimer.singleShot(100, refresh_client_when_idle)
+        else:
+            window.client_tab.refresh_imported_devices()
+    QTimer.singleShot(0, refresh_client_when_idle)
     sys.exit(app.exec())
 
 

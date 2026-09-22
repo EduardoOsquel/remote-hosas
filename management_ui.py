@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from operation_gate import OperationGate
 from command_log import DIAGNOSTICS, record_exception, record_result
 from ui_theme import make_button, setup_page
 from usbip_manager import (build_usbipd_install_command, build_usbip_win2_install_command,
@@ -20,8 +21,9 @@ from usbip_installer import find_client_installation, supported_architecture, In
 
 
 class ManagementTab(QWidget):
-    def __init__(self) -> None:
+    def __init__(self, gate=None) -> None:
         super().__init__()
+        self.gate = gate or OperationGate()
         self._process = None
         root = QVBoxLayout(self)
         setup_page(root)
@@ -103,6 +105,7 @@ class ManagementTab(QWidget):
         self.log_widget.setPlaceholderText("Component actions and results will appear here.")
         root.addWidget(self.log_widget, 1)
         self.refresh_installation_status()
+        self.gate.changed.connect(self.refresh_installation_status)
 
     @staticmethod
     def _component_card(title, subtitle, description, hint, buttons):
@@ -175,7 +178,7 @@ class ManagementTab(QWidget):
                              "Checks executable availability and standard installation folders.")
             badge.style().unpolish(badge)
             badge.style().polish(badge)
-        busy = self._process is not None
+        busy = self._process is not None or not self.gate.available(self)
         self.install_usbipd_btn.setEnabled(not busy and not host)
         self.uninstall_usbipd_btn.setEnabled(not busy and host)
         try:
@@ -195,6 +198,9 @@ class ManagementTab(QWidget):
 
     def _start_command(self, label, command, success_message=None, client_action=False):
         if self._process is not None:
+            return
+        if not self.gate.acquire(self):
+            self.log("Wait for the current USB/IP or management action to finish.")
             return
         process = QProcess(self)
         self._process = process
@@ -263,6 +269,7 @@ class ManagementTab(QWidget):
     def _finish_command(self):
         self._process.deleteLater()
         self._process = None
+        self.gate.release(self)
         self.progress.hide()
         self.refresh_installation_status()
 

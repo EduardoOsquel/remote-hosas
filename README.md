@@ -175,3 +175,17 @@ installer execution, including integrity failures, missing installations and UAC
 cancellation. A real driver installation is not part of the test suite.
 Restore-point creation is also simulated. PowerShell tests parse the scripts
 without running their system-changing instructions.
+
+## Command coordination
+
+Host commands run on a worker thread. Listing and Bind/Unbind have a 30-second
+execution limit. Bind/Unbind request Windows administrator approval when needed;
+UAC cancellation is reported in English. The UAC prompt remains under user control;
+the elevated command timeout starts after approval. The application waits for the
+operation to finish before permitting exit, and refreshes host state after every
+sharing attempt, including failure or cancellation.
+
+A shared operation gate serializes Host, Client and Management commands. Controls
+in other tabs are disabled while a command runs, and command entry points also
+reject conflicting requests. Host retains the gate through its post-action refresh.
+Sending the window to the system tray remains available during operations.

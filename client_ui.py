@@ -4,6 +4,7 @@ from PyQt6.QtCore import QProcess, QTimer
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
                             QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox, QTextEdit)
 
+from operation_gate import OperationGate
 from command_log import record_exception, record_result
 from ui_theme import setup_page, make_button
 from usbip_manager import (USBIP_TCP_PORT, build_usbip_list_command,
@@ -12,8 +13,9 @@ from usbip_manager import (USBIP_TCP_PORT, build_usbip_list_command,
 
 
 class ClientModeTab(QWidget):
-    def __init__(self):
+    def __init__(self, gate=None):
         super().__init__()
+        self.gate = gate or OperationGate()
         self.devices = []
         self.imported_devices = []
         self._listed_endpoint = None
@@ -86,6 +88,7 @@ class ClientModeTab(QWidget):
         self.tcp_port_input.valueChanged.connect(self._invalidate_remote)
         self._invalidate_remote()
         self._set_imported([])
+        self.gate.changed.connect(self._update_controls)
 
     @property
     def is_busy(self):
@@ -109,7 +112,7 @@ class ClientModeTab(QWidget):
         self._update_controls()
 
     def _update_controls(self):
-        idle = not self.is_busy
+        idle = not self.is_busy and self.gate.available(self)
         self.host_input.setEnabled(idle)
         self.tcp_port_input.setEnabled(idle)
         self.list_btn.setEnabled(idle and bool(self.host_input.text().strip()))
@@ -229,6 +232,9 @@ class ClientModeTab(QWidget):
             if on_failure:
                 on_failure()
             return
+        if not self.gate.acquire(self):
+            self.log("Wait for the current USB/IP or management action to finish.")
+            return
         self._label, self._command = label, command
         self._callback, self._after = callback, after
         self._on_failure = on_failure
@@ -259,6 +265,7 @@ class ClientModeTab(QWidget):
         self._timer.stop()
         self._process.deleteLater()
         self._process = None
+        self.gate.release(self)
         self._update_controls()
 
     def _finished(self, code, status):
