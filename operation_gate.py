@@ -5,6 +5,7 @@ class OperationGate(QObject):
     changed = pyqtSignal()
     def __init__(self):
         super().__init__()
+        self.shutting_down = False
         self.background = False
         self.starting_background = False
         self.pending_action = None
@@ -32,9 +33,13 @@ def defer_background_action(method):
     def wrapped(self, *args, **kwargs):
         args = args[:positional_count]
         gate = self.gate
+        if gate.shutting_down:
+            return
         if gate.background and not gate.starting_background:
             if gate.pending_action is None:
                 def retry():
+                    if gate.pending_action is not retry or gate.shutting_down:
+                        return
                     if gate.background or gate.owner is not None:
                         QTimer.singleShot(25, retry)
                         return

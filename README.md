@@ -247,7 +247,7 @@ Build with Python 3.12 x64 in a virtual environment:
 .venv\Scripts\python.exe -m PyInstaller --noconfirm RemoteHosas.spec
 ```
 
-The console is automatically hidden when launched from Explorer. The embedded
+The executable uses windowed mode and does not allocate a console. The embedded
 Management helper preserves redirected output for progress and diagnostics.
 The launcher has `--smoke-test` (loads Qt, application modules and icon, shows a
 brief test window, then exits) and an internal `--installer-helper` entry point.
@@ -258,3 +258,15 @@ while querying. Unchanged results do not rebuild the device widgets. A manual
 action requested during a background query is deferred until it completes; the
 remaining background queries yield to that action. Manual operations retain the
 normal shared operation lock. Tray menu hover uses a contrasting blue highlight.
+
+Windowed builds recover the stdout/stderr pipe handles supplied by Management
+without allocating a console, so helper progress and diagnostic output remain
+available. Running app.py from an existing terminal does not close that terminal.
+Rebuilding is required for an existing EXE to adopt the windowed configuration.
+
+Closing during an automatic status query suspends further polling, discards queued
+user actions and waits for that query before disconnecting imports. A progress
+window reports cleanup and offers Cancel exit. A 100-second overall deadline
+returns control if cleanup cannot complete. Cancellation does not reconnect devices
+already detached; host shares are untouched. Busy/failed command dispatch always
+reports failure to the exit workflow instead of leaving it waiting for a callback.

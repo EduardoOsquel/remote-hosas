@@ -135,6 +135,8 @@ class SystemTray(QObject):
         if gate.background:
             if gate.pending_action is None:
                 def retry():
+                    if gate.pending_action is not retry or gate.shutting_down:
+                        return
                     if gate.background or not self._idle():
                         QTimer.singleShot(25, retry)
                         return

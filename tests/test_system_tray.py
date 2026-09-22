@@ -344,3 +344,47 @@ def test_about_is_fixed_and_application_modal(window):
     application.processEvents()
     assert widget.tray.menu.isEnabled()
     assert application.activeModalWidget() is None
+
+
+
+def test_exit_waits_for_background_query_then_disconnects(window):
+    _, widget, quit_app = window
+    gate = widget.operation_gate
+    widget.tray._start_quiet_refresh(widget.client_tab, "Imported devices",
+                                    lambda: gate.acquire(widget.client_tab))
+    completions = []
+    with patch.object(widget.client_tab, "disconnect_before_exit", side_effect=completions.append):
+        widget.request_exit()
+        assert widget._shutdown_pending
+        assert not widget._periodic_refresh.isActive()
+        assert widget._exit_progress.isVisible()
+        assert not completions
+        gate.release(widget.client_tab)
+        widget._continue_exit(widget._shutdown_generation)
+        assert len(completions) == 1
+        assert not gate.background
+        completions[0](True)
+    quit_app.assert_called_once()
+
+
+def test_cancel_exit_restores_ui_and_ignores_late_success(window):
+    _, widget, quit_app = window
+    completions = []
+    with patch.object(widget.client_tab, "disconnect_before_exit", side_effect=completions.append):
+        widget.request_exit()
+    widget._cancel_exit()
+    assert widget.centralWidget().isEnabled()
+    assert widget._periodic_refresh.isActive()
+    assert not widget._shutdown_pending
+    assert not widget._exit_progress.isVisible()
+    completions[0](True)
+    quit_app.assert_not_called()
+
+
+def test_exit_recovers_from_unexpected_cleanup_exception(window):
+    _, widget, quit_app = window
+    with patch.object(widget.client_tab, "disconnect_before_exit", side_effect=OSError("Access denied")):
+        widget.request_exit()
+    assert widget.centralWidget().isEnabled()
+    assert not widget._shutdown_pending
+    quit_app.assert_not_called()

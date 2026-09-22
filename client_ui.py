@@ -232,11 +232,22 @@ class ClientModeTab(QWidget):
     def disconnect_before_exit(self, done):
         """Query fresh state, detach all imports and verify before allowing exit."""
         from usbip_installer import find_client_installation
+        if self.is_busy or not self.gate.available(self):
+            done(False)
+            return
         try:
             resolve_usbip_client()
         except FileNotFoundError:
             # Host-only installations have no client devices to clean up.
-            done(not self.imported_devices and find_client_installation() is None)
+            try:
+                done(not self.imported_devices and find_client_installation() is None)
+            except OSError as error:
+                self.log(record_exception("Check client installation", ["usbip"], error))
+                done(False)
+            return
+        except OSError as error:
+            self.log(record_exception("Check client installation", ["usbip"], error))
+            done(False)
             return
         def failed():
             done(False)
@@ -258,10 +269,12 @@ class ClientModeTab(QWidget):
 
     def _run(self, label, command, callback=None, after=None, on_failure=None):
         if self.is_busy:
+            if on_failure:
+                on_failure()
             return
         try:
             command = [resolve_usbip_client(), *command[1:]]
-        except FileNotFoundError as error:
+        except OSError as error:
             self.log(record_exception(label, command, error))
             self.log("Install usbip-win2 in Management on this Windows client.")
             self._update_controls()
@@ -270,6 +283,8 @@ class ClientModeTab(QWidget):
             return
         if not self.gate.acquire(self):
             self.log("Wait for the current USB/IP or management action to finish.")
+            if on_failure:
+                on_failure()
             return
         self._label, self._command = label, command
         self._callback, self._after = callback, after
@@ -305,6 +320,8 @@ class ClientModeTab(QWidget):
         self._update_controls()
 
     def _finished(self, code, status):
+        if self._process is None:
+            return
         output = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
         error = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
         if self._timed_out or status == QProcess.ExitStatus.CrashExit:

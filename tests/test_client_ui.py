@@ -221,3 +221,24 @@ def test_local_host_shortcut_respects_management_lock(client):
         run.assert_not_called()
     assert widget.host_input.text() == ""
     widget.gate.release(owner)
+
+
+
+def test_shutdown_command_reports_lock_conflict(client):
+    _, widget = client
+    owner = object()
+    widget.gate.acquire(owner)
+    failed = []
+    with patch("client_ui.resolve_usbip_client", return_value="usbip.exe"):
+        widget._run("Check connections before exit", ["usbip", "port"], on_failure=lambda: failed.append(True))
+    assert failed == [True]
+    widget.gate.release(owner)
+
+
+def test_shutdown_reports_busy_client_instead_of_waiting_forever(client):
+    _, widget = client
+    widget._process = object()
+    result = []
+    widget.disconnect_before_exit(result.append)
+    assert result == [False]
+    widget._process = None

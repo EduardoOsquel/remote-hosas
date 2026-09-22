@@ -4,6 +4,9 @@ import sys
 
 
 def main():
+    os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+    from windowed_io import prepare_output
+    prepare_output(helper=len(sys.argv) > 1 and sys.argv[1] == "--installer-helper")
     if getattr(sys, "frozen", False) and sys.platform == "win32":
         # External Windows tools must use their own system DLL search path.
         import ctypes

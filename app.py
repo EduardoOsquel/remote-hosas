@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMainWindow,
+    QProgressDialog,
     QMessageBox,
     QSplitter,
     QTabWidget,
@@ -421,6 +422,12 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self._exit_requested = False
         self._shutdown_pending = False
         self._shutdown_ready = False
+        self._shutdown_generation = 0
+        self._shutdown_cleanup_started = False
+        self._exit_progress = None
+        self._exit_timeout = QTimer(self)
+        self._exit_timeout.setSingleShot(True)
+        self._exit_timeout.timeout.connect(self._cancel_exit)
         self.setWindowTitle("USB/IP + Joystick Bridge")
         self.setWindowIcon(application_icon())
         self.resize(1100, 800)
@@ -543,6 +550,9 @@ class UsbipJoystickBridgeApp(QMainWindow):
             QApplication.instance().quit()
             return
         if self._shutdown_pending:
+            if self._exit_progress is not None:
+                self._exit_progress.show()
+                self._exit_progress.raise_()
             self._exit_requested = False
             event.ignore()
             return
@@ -553,13 +563,13 @@ class UsbipJoystickBridgeApp(QMainWindow):
             if choice == "tray":
                 self.tray.hide_window()
             return
-        if self.host_tab.is_busy:
+        if self.host_tab.is_busy and not self.operation_gate.background:
             self.tray.restore()
             self.centralWidget().setCurrentWidget(self.host_tab)
             self.host_tab.log("Wait for the current host action to finish before closing.")
             event.ignore()
             return
-        if self.client_tab.is_busy:
+        if self.client_tab.is_busy and not self.operation_gate.background:
             self.tray.restore()
             self.centralWidget().setCurrentWidget(self.client_tab)
             self.client_tab.log("Wait for the current client action to finish before closing.")
@@ -574,12 +584,70 @@ class UsbipJoystickBridgeApp(QMainWindow):
             return
         event.ignore()
         self._shutdown_pending = True
+        self._shutdown_generation += 1
+        self._shutdown_cleanup_started = False
+        self.operation_gate.shutting_down = True
+        self.operation_gate.pending_action = None
+        self._periodic_refresh.stop()
+        self._foreground_refresh.stop()
+        self.tray._refresh_steps.clear()
+        self.tray._automatic_cycle = False
+        self.tray._notification_source = None
         if self.joystick_tab._timer is not None:
             self.joystick_tab._timer.stop()
+        self.tray.restore()
+        self.centralWidget().setCurrentWidget(self.client_tab)
         self.centralWidget().setEnabled(False)
-        self.client_tab.disconnect_before_exit(self._finish_exit)
+        if self._exit_progress is None:
+            self._exit_progress = QProgressDialog("Preparing to disconnect devices...", "Cancel exit", 0, 0, self)
+            self._exit_progress.setWindowTitle("Closing application")
+            self._exit_progress.setMinimumDuration(0)
+            self._exit_progress.canceled.connect(self._cancel_exit)
+            self.client_tab.activity.connect(self._exit_activity)
+        self._exit_progress.setLabelText("Waiting for the current status check to finish...")
+        self._exit_progress.show()
+        self._exit_timeout.start(100000)
+        self._continue_exit(self._shutdown_generation)
+
+    def _exit_activity(self, message):
+        if self._shutdown_pending and self._exit_progress is not None:
+            self._exit_progress.setLabelText(message)
+
+    def _continue_exit(self, generation):
+        if not self._shutdown_pending or generation != self._shutdown_generation:
+            return
+        if self.host_tab.is_busy or self.client_tab.is_busy or self.operation_gate.owner is not None:
+            QTimer.singleShot(100, lambda: self._continue_exit(generation))
+            return
+        if self.tray._quiet_refresh is not None:
+            self.tray._finish_quiet_refresh()
+        self._shutdown_cleanup_started = True
+        self._exit_progress.setLabelText("Checking and disconnecting imported devices...")
+        def done(success):
+            if self._shutdown_pending and generation == self._shutdown_generation:
+                self._finish_exit(success)
+        try:
+            self.client_tab.disconnect_before_exit(done)
+        except Exception as error:
+            self.client_tab.log(record_exception("Disconnect before exit", ["usbip"], error))
+            done(False)
+
+    def _cancel_exit(self):
+        if not self._shutdown_pending:
+            return
+        self._shutdown_generation += 1
+        if self._shutdown_cleanup_started and self.client_tab.is_busy:
+            self.client_tab._callback = None
+            self.client_tab._after = None
+            self.client_tab._on_failure = None
+            self.client_tab._timeout()
+        self._finish_exit(False)
 
     def _finish_exit(self, success):
+        self._exit_timeout.stop()
+        if self._exit_progress is not None:
+            self._exit_progress.hide()
+        self.operation_gate.shutting_down = False
         self._shutdown_pending = False
         self.centralWidget().setEnabled(True)
         if success:
@@ -589,6 +657,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
             self.hide()
             QApplication.instance().quit()
         else:
+            self._periodic_refresh.start()
             self.tray.restore()
             self.centralWidget().setCurrentWidget(self.client_tab)
             self.client_tab.log("Exit cancelled: USB/IP devices could not be confirmed disconnected. Refresh connections and retry Exit.")
