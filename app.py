@@ -2,7 +2,7 @@ import subprocess
 import sys
 from typing import List, Optional
 
-from PyQt6.QtCore import pyqtSignal, QEvent, Qt, QTimer
+from PyQt6.QtCore import QSettings, QByteArray, pyqtSignal, QEvent, Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -408,7 +408,7 @@ class JoystickTab(QWidget):
 
 
 class UsbipJoystickBridgeApp(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, settings=None) -> None:
         super().__init__()
         self._exit_requested = False
         self._shutdown_pending = False
@@ -439,6 +439,58 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self._periodic_refresh.setInterval(30000)
         self._periodic_refresh.timeout.connect(self._refresh_external_state)
         self._periodic_refresh.start()
+        self._settings = settings if settings is not None else QSettings("RemoteHosas", "USBIPBridge")
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(500)
+        self._save_timer.timeout.connect(self._save_preferences)
+        self._restore_preferences()
+        self.client_tab.host_input.textChanged.connect(self._schedule_save)
+        self.client_tab.tcp_port_input.valueChanged.connect(self._schedule_save)
+        self.host_tab.splitter.splitterMoved.connect(self._schedule_save)
+
+    def _restore_preferences(self):
+        host = self._settings.value("client/host", "")
+        self.client_tab.host_input.setText(host if isinstance(host, str) else "")
+        def integer(key, default, low, high):
+            try:
+                value = int(self._settings.value(key, default))
+                return value if low <= value <= high else default
+            except (ValueError, TypeError, OverflowError):
+                return default
+        self.client_tab.tcp_port_input.setValue(integer("client/port", 3240, 1024, 65535))
+        self.resize(integer("window/width", 1100, 900, 16000),
+                    integer("window/height", 800, 680, 16000))
+        state = self._settings.value("host/splitter")
+        if isinstance(state, QByteArray):
+            self.host_tab.splitter.restoreState(state)
+        maximized = str(self._settings.value("window/maximized", "false")).lower() == "true"
+        self.tray.restore_maximized = maximized
+        if maximized:
+            self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+
+    def _schedule_save(self, *args):
+        if hasattr(self, "_save_timer"):
+            self._save_timer.start()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._schedule_save()
+
+    def _save_preferences(self):
+        self._save_timer.stop()
+        self._settings.setValue("client/host", self.client_tab.host_input.text().strip())
+        self._settings.setValue("client/port", self.client_tab.tcp_port_input.value())
+        normal = self.normalGeometry() if self.isMaximized() or self.isMinimized() else self.geometry()
+        if normal.isValid():
+            self._settings.setValue("window/width", normal.width())
+            self._settings.setValue("window/height", normal.height())
+        self._settings.setValue("window/maximized", self.tray.restore_maximized if self.isMinimized() else self.isMaximized())
+        self._settings.setValue("host/splitter", self.host_tab.splitter.saveState())
+        self._settings.sync()
+        if self._settings.status() != QSettings.Status.NoError:
+            self.statusBar().showMessage("Unable to save preferences. Check your user profile permissions.", 8000)
+
 
     def _refresh_external_state(self):
         if self.tray._idle() and not self.tray._refresh_steps:
@@ -451,6 +503,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
                 and hasattr(self, "_foreground_refresh")):
             self._foreground_refresh.start()
         if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "tray"):
+            self._schedule_save()
             if self.isMinimized():
                 self.tray.restore_maximized = bool(event.oldState() & Qt.WindowState.WindowMaximized)
                 QTimer.singleShot(0, self._minimize_to_tray)
@@ -464,6 +517,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.close()
 
     def closeEvent(self, event) -> None:
+        self._save_preferences()
         if self._shutdown_ready:
             self.tray.icon.hide()
             event.accept()
@@ -510,6 +564,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self._shutdown_pending = False
         self.centralWidget().setEnabled(True)
         if success:
+            self._save_preferences()
             self._shutdown_ready = True
             self.tray.icon.hide()
             self.hide()

@@ -257,3 +257,37 @@ def test_automatic_refresh_deduplicates_errors_and_reports_recovery(window):
     assert "Connection restored" in host.log_widget.toPlainText()
     host.log("Manual action")
     assert "Manual action" in host.log_widget.toPlainText()
+
+
+
+def test_preferences_restore_endpoint_size_and_splitter(window):
+    application, widget, _ = window
+    widget.client_tab.host_input.setText("my-host")
+    widget.client_tab.tcp_port_input.setValue(4321)
+    widget.resize(1200, 850)
+    application.processEvents()
+    widget.host_tab.splitter.setSizes([400, 180])
+    expected_splitter = widget.host_tab.splitter.saveState()
+    widget._save_preferences()
+    widget.client_tab.host_input.setText("temporary")
+    widget.client_tab.tcp_port_input.setValue(3240)
+    widget.resize(1000, 700)
+    widget.host_tab.splitter.setSizes([200, 300])
+    widget._restore_preferences()
+    assert widget.client_tab.host_input.text() == "my-host"
+    assert widget.client_tab.tcp_port_input.value() == 4321
+    assert widget.width() == 1200
+    assert widget.height() == 850
+    assert widget.host_tab.splitter.saveState() == expected_splitter
+
+
+def test_invalid_preferences_use_defaults(window):
+    _, widget, _ = window
+    widget._settings.setValue("client/port", "invalid")
+    widget._settings.setValue("window/width", -3)
+    widget._settings.setValue("window/height", 99999999)
+    widget._settings.setValue("host/splitter", "invalid")
+    widget._restore_preferences()
+    assert widget.client_tab.tcp_port_input.value() == 3240
+    assert widget.size().width() == 1100
+    assert widget.size().height() == 800

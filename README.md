@@ -225,3 +225,10 @@ unchanged. Changes produce one summary per list. A new query failure is reported
 once, repeated identical failures are suppressed, and recovery is reported.
 Manual actions retain their normal logs; original command diagnostics remain
 available for export. These are real read-only queries, not simulated operations.
+
+User preferences are saved automatically with Qt QSettings under RemoteHosas /
+USBIPBridge in the current Windows user profile. The remote host, TCP port,
+normal window size, maximized state and Host table/log splitter are restored at
+startup. Changes are saved after a short debounce and when closing the window.
+Invalid stored numbers fall back to defaults. Saving preferences does not attach
+or share devices; the normal background read-only refresh still applies.

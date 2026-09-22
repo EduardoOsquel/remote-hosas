@@ -18,3 +18,13 @@ def simulated_host_worker(monkeypatch):
                 self.error = error
             self.finished.emit()
     monkeypatch.setattr(app, "HostWorker", Worker)
+
+
+@pytest.fixture(autouse=True)
+def isolated_preferences(monkeypatch, tmp_path):
+    from PyQt6.QtCore import QSettings
+    import app
+    monkeypatch.setattr(app, "QSettings", type("IsolatedSettings", (), {
+        "Status": QSettings.Status,
+        "__new__": lambda cls, *args: QSettings(str(tmp_path / "preferences.ini"), QSettings.Format.IniFormat)
+    }))
