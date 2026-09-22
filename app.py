@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover
     pygame = None
 
 from management_ui import ManagementTab
+from client_ui import ClientModeTab
 from command_log import record_exception, record_result
 from ui_theme import APP_STYLESHEET, make_button, setup_page
 from app_icon import application_icon, set_windows_app_id
@@ -35,8 +36,6 @@ from app_icon import application_icon, set_windows_app_id
 from joystick_bridge import JoystickPacket, JoystickState
 from usbip_manager import (
     UsbipDevice,
-    build_usbip_attach_command,
-    build_usbip_detach_command,
     build_usbipd_bind_command,
     build_usbipd_unbind_command,
     parse_usbipd_list,
@@ -51,6 +50,10 @@ class HostModeTab(QWidget):
 
         root = QVBoxLayout(self)
         setup_page(root)
+
+        host_note = QLabel("Share USB devices physically connected to this Windows PC. Server: usbipd-win | TCP 3240. Bind / Unbind require administrator rights.")
+        host_note.setWordWrap(True)
+        root.addWidget(host_note)
 
         self.device_combo = QComboBox()
         self.device_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
@@ -88,9 +91,9 @@ class HostModeTab(QWidget):
         actions = QHBoxLayout()
         self.list_btn = self._make_button("List devices", "refresh")
         self.list_btn.clicked.connect(self.refresh_usbipd_devices)
-        self.bind_btn = self._make_button("Bind / share", "share")
+        self.bind_btn = self._make_button("Bind / Share", "share")
         self.bind_btn.clicked.connect(self.bind_selected_device)
-        self.unbind_btn = self._make_button("Unbind / stop sharing", "disconnect")
+        self.unbind_btn = self._make_button("Unbind / Stop sharing", "disconnect")
         self.unbind_btn.clicked.connect(self.unbind_selected_device)
         actions.addWidget(self.list_btn)
         actions.addWidget(self.bind_btn)
@@ -207,115 +210,6 @@ class HostModeTab(QWidget):
         self.refresh_usbipd_devices()
 
 
-class ClientModeTab(QWidget):
-    def __init__(self) -> None:
-        super().__init__()
-        self.devices: List[UsbipDevice] = []
-        self._log_buffer: List[str] = []
-
-        root = QVBoxLayout(self)
-        setup_page(root)
-
-        self.host_input = QComboBox()
-        self.host_input.setEditable(True)
-        self.host_input.addItem("192.168.1.10")
-        self.host_input.addItem("10.0.0.5")
-        self.host_input.addItem("localhost")
-        connection_form = QFormLayout()
-        connection_form.addRow("Remote host", self.host_input)
-
-        self.port_input = QComboBox()
-        self.port_input.setEditable(True)
-        self.port_input.addItem("1")
-        self.port_input.addItem("2")
-        self.port_input.addItem("3")
-        connection_form.addRow("Detach port", self.port_input)
-        root.addLayout(connection_form)
-
-        self.device_combo = QComboBox()
-        self.device_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.device_combo.setMinimumContentsLength(24)
-        self.device_combo.addItem("No shared USB devices")
-        root.addWidget(QLabel("Selected USB device"))
-        root.addWidget(self.device_combo)
-
-        actions = QHBoxLayout()
-        self.attach_btn = self._make_button("Attach / connect", "connect")
-        self.attach_btn.clicked.connect(self.attach_selected_device)
-        self.detach_btn = self._make_button("Detach / disconnect", "disconnect")
-        self.detach_btn.clicked.connect(self.detach_selected_device)
-        actions.addWidget(self.attach_btn)
-        actions.addWidget(self.detach_btn)
-        actions.addStretch(1)
-        root.addLayout(actions)
-
-        self.log_widget = QTextEdit()
-        self.log_widget.setReadOnly(True)
-        self.log_widget.setPlaceholderText("Client logs...")
-        root.addWidget(QLabel("Activity log"))
-        root.addWidget(self.log_widget, 1)
-
-        self.refresh_usbipd_devices()
-
-    _make_button = staticmethod(make_button)
-
-    def log(self, message: str) -> None:
-        self._log_buffer.append(message)
-        if len(self._log_buffer) > 250:
-            self._log_buffer = self._log_buffer[-250:]
-        self.log_widget.setPlainText("\n".join(self._log_buffer))
-        self.log_widget.verticalScrollBar().setValue(self.log_widget.verticalScrollBar().maximum())
-
-    def run_command(self, label: str, command: List[str]) -> None:
-        try:
-            self.log(f"> {label}")
-            self.log(f"Running: {' '.join(command)}")
-            result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", shell=False, check=False)
-            self.log(record_result(label, command, result.returncode, result.stdout, result.stderr))
-        except Exception as exc:
-            self.log(record_exception(label, command, exc))
-
-    def refresh_usbipd_devices(self) -> None:
-        try:
-            result = subprocess.run(["usbipd", "list"], capture_output=True, text=True, encoding="utf-8", errors="replace", shell=False, check=False)
-            if result.returncode != 0:
-                self.device_combo.clear()
-                self.device_combo.addItem("Unable to list devices")
-                self.log(record_result("List USB devices", ["usbipd", "list"], result.returncode, result.stdout, result.stderr))
-                return
-            devices = parse_usbipd_list(result.stdout)
-            self.devices = devices
-            self.device_combo.clear()
-            if not devices:
-                self.device_combo.addItem("No shared USB devices")
-                self.log("No USB devices are shared yet or no bind has been performed.")
-                return
-            for device in devices:
-                self.device_combo.addItem(f"{device.busid} - {device.name}")
-            self.log(f"Detected {len(devices)} USB device(s).")
-        except Exception as exc:
-            self.log(record_exception("List USB devices", ["usbipd", "list"], exc))
-
-    def attach_selected_device(self) -> None:
-        host = self.host_input.currentText().strip()
-        if not host:
-            QMessageBox.warning(self, "Warning", "Enter a valid IP or host for the remote machine.")
-            return
-        idx = self.device_combo.currentIndex()
-        if idx < 0 or idx >= len(self.devices):
-            QMessageBox.warning(self, "Warning", "Select a shared device before connecting.")
-            return
-        busid = self.devices[idx].busid
-        self.run_command(f"Attach device {busid} from {host}", build_usbip_attach_command(host, busid))
-
-    def detach_selected_device(self) -> None:
-        port = self.port_input.currentText().strip()
-        if not port:
-            QMessageBox.warning(self, "Warning", "Enter a valid USB/IP port number to detach.")
-            return
-        self.run_command(f"Detach port {port}", build_usbip_detach_command(port))
-
-
 class JoystickTab(QWidget):
     _make_button = staticmethod(make_button)
 
@@ -329,7 +223,10 @@ class JoystickTab(QWidget):
         root = QVBoxLayout(self)
         setup_page(root)
 
-        panel = QGroupBox("Joystick connection")
+        note = QLabel("Local controller monitor. Attach a remote device in Client Mode first, then refresh controllers here.")
+        note.setWordWrap(True)
+        root.addWidget(note)
+        panel = QGroupBox("Local controller")
         form = QFormLayout(panel)
         self.device_combo = QComboBox()
         self.device_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
@@ -338,7 +235,7 @@ class JoystickTab(QWidget):
         form.addRow("Local joystick:", self.device_combo)
         root.addWidget(panel)
 
-        self.connect_btn = self._make_button("Connect", "connect")
+        self.connect_btn = self._make_button("Start monitoring", "connect")
         self.connect_btn.clicked.connect(self.connect_local_joystick)
 
         self.log = QTextEdit()
@@ -347,6 +244,9 @@ class JoystickTab(QWidget):
 
         buttons_row = QHBoxLayout()
         buttons_row.addWidget(self.connect_btn)
+        refresh_btn = make_button("Refresh controllers", "refresh")
+        refresh_btn.clicked.connect(self.refresh_devices)
+        buttons_row.addWidget(refresh_btn)
         buttons_row.addStretch(1)
         root.addLayout(buttons_row)
         root.addWidget(QLabel("Joystick activity"))
@@ -362,6 +262,11 @@ class JoystickTab(QWidget):
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
 
     def refresh_devices(self) -> None:
+        if self._timer is not None:
+            self._timer.stop()
+        if self._current_joystick is not None:
+            self._current_joystick.quit()
+            self._current_joystick = None
         if pygame is None:
             self.device_combo.clear()
             self.device_combo.addItem("PyGame not installed")
@@ -410,10 +315,11 @@ class JoystickTab(QWidget):
         if self._current_joystick is None:
             return
 
+        pygame.event.pump()
         joystick = self._current_joystick
         axes = [joystick.get_axis(i) for i in range(joystick.get_numaxes())]
         buttons = [bool(joystick.get_button(i)) for i in range(joystick.get_numbuttons())]
-        hats = [joystick.get_hat(0)] if joystick.get_numhats() > 0 else []
+        hats = [joystick.get_hat(i) for i in range(joystick.get_numhats())]
 
         state = JoystickState(axes=axes, buttons=buttons, hats=hats)
         packet = JoystickPacket.from_state(state)
@@ -427,17 +333,23 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.setWindowIcon(application_icon())
         self.resize(1100, 800)
         self.setStyleSheet(APP_STYLESHEET)
-        self.setMinimumSize(900, 620)
+        self.setMinimumSize(900, 680)
 
         tabs = QTabWidget()
         tabs.addTab(HostModeTab(), "Host Mode")
-        tabs.addTab(ClientModeTab(), "Client Mode")
+        self.client_tab = ClientModeTab()
+        tabs.addTab(self.client_tab, "Client Mode")
         self.management_tab = ManagementTab()
         tabs.addTab(self.management_tab, "Management")
         tabs.addTab(JoystickTab(), "Joystick")
         self.setCentralWidget(tabs)
 
     def closeEvent(self, event) -> None:
+        if self.client_tab.is_busy:
+            self.centralWidget().setCurrentWidget(self.client_tab)
+            self.client_tab.log("Wait for the current client action to finish before closing.")
+            event.ignore()
+            return
         if self.management_tab.is_busy:
             self.centralWidget().setCurrentWidget(self.management_tab)
             self.management_tab.operation_status.setText(

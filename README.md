@@ -1,6 +1,6 @@
 # HOSAS + PyQt6 Joystick Bridge
 
-A desktop interface for USB/IP component management and local joystick capture.
+A Windows-to-Windows USB/IP interface and local joystick monitor.
 The application UI and activity messages are in English.
 
 ## Requirements
@@ -19,7 +19,8 @@ The previous `python usbip_ui.py` entry point opens the same application.
 
 ## Project structure
 
-- `app.py`: main window, Host, Client and Joystick tabs.
+- `app.py`: main window, Host and Joystick tabs.
+- `client_ui.py`: asynchronous Windows client commands, remote exports and imported devices.
 - `management_ui.py`: component cards, detection and asynchronous management actions.
 - `ui_theme.py`: shared colors, controls and spacing.
 - `ui_icons.py`: vector icons with normal and disabled states.
@@ -35,6 +36,34 @@ The previous `python usbip_ui.py` entry point opens the same application.
 - `tests/`: command, serialization and UI regression tests.
 
 ## Interface
+
+### Windows-to-Windows connection
+
+1. On the Windows PC with the physical USB device, install **usbipd-win** in
+   Management. In Host Mode, list devices and **Bind / Share** the desired BUSID.
+   Bind and Unbind need administrator rights on that PC.
+2. On the receiving Windows PC, install **usbip-win2** in Management. In Client
+   Mode, enter the host's LAN/Tailscale address. Leave **Server TCP port** at
+   **3240** for the normal usbipd-win service.
+3. Click **List remote devices**, select an exported device, then **Attach / Connect**.
+4. **Refresh connections** reads devices imported into this Windows PC. Select
+   an imported device and use **Detach / Disconnect** to release it.
+
+The server firewall must permit inbound TCP 3240 from the client's network.
+The application does not change firewall rules. A custom client TCP port is only
+for an explicitly configured network port forward; it does not reconfigure the server.
+The virtual port returned by `usbip port` is an assigned USB hub slot (1-255),
+not TCP 3240. It is discovered automatically, never populated with example numbers.
+
+Host uses `usbipd list/bind/unbind`. Client uses usbip-win2's `usbip --tcp-port=3240
+list -r HOST`, `usbip --tcp-port=3240 attach -r HOST -b BUSID --once`, `usbip port`
+and `usbip detach -p VIRTUAL_PORT`. No WSL command is used. Remote queries occur
+on request; startup does not contact an example host. Client actions have a 30-second
+timeout and refresh imported and remote lists after attach/detach. Changing the
+host or TCP port invalidates the previous remote selection.
+
+References: [usbipd-win server setup](https://github.com/dorssel/usbipd-win#how-to-use),
+[Windows client commands](https://github.com/vadimgrn/usbip-win2#use-usbipexe-to-attach-remote-devices).
 
 Host keeps the device table at the available width after refresh. DEVICE absorbs
 extra space while the other columns fit their content. Drag the separator to
@@ -90,10 +119,12 @@ The window remains open while a management command is running.
 
 ## Current scope
 
-The Joystick tab detects local controllers, reads axes, buttons and hats every
-20 ms, and builds a Python dictionary packet. Network transmission and remote
-virtual-joystick playback are not implemented yet. USB/IP actions invoke external
-tools and require the appropriate tools and permissions on the target system.
+The Joystick tab monitors controllers visible to local Windows, including those
+imported through USB/IP. After attaching a remote joystick, click Refresh controllers
+and Start monitoring. It reads axes, buttons and all hats every 20 ms and builds a
+Python dictionary packet. The Joystick tab does not implement a separate network
+transport: USB/IP forwarding is handled by usbipd-win and usbip-win2. Refreshing
+controllers stops an existing monitoring session; select a controller to start again.
 
 ## Tests
 

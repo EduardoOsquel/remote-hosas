@@ -35,7 +35,8 @@ class ManagementTab(QWidget):
         self.refresh_btn.clicked.connect(self.refresh_installation_status)
         heading.addWidget(self.refresh_btn)
         root.addLayout(heading)
-        description = QLabel("Manage the tools used to share and connect USB devices.")
+        description = QLabel("Host PC: install usbipd-win. Client PC: install usbip-win2. Install both only if this PC has both roles.")
+        description.setWordWrap(True)
         description.setProperty("role", "muted")
         root.addWidget(description)
 
