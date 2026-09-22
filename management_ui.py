@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 
 from operation_gate import OperationGate
+from host_commands import resolve_host
 from command_log import DIAGNOSTICS, record_exception, record_result
 from ui_theme import make_button, setup_page
 from usbip_manager import (build_usbipd_install_command, build_usbip_win2_install_command,
@@ -163,7 +164,18 @@ class ManagementTab(QWidget):
         return False
 
     def _is_usbipd_installed(self):
-        return self._component_detected("usbipd", "usbipd-win")
+        try:
+            self._host_path = resolve_host()
+            self._host_detection_error = None
+            return True
+        except FileNotFoundError:
+            self._host_path = None
+            self._host_detection_error = None
+            return False
+        except OSError:
+            self._host_path = None
+            self._host_detection_error = "Unable to check usbipd-win. Check file access permissions and retry."
+            return False
 
     def _is_usbip_win2_installed(self):
         return find_client_installation() is not None
@@ -178,9 +190,15 @@ class ManagementTab(QWidget):
                              "Checks executable availability and standard installation folders.")
             badge.style().unpolish(badge)
             badge.style().polish(badge)
+        detection_error = getattr(self, "_host_detection_error", None)
+        if detection_error:
+            self.usbipd_status.setText("Unavailable")
+            self.usbipd_status.setToolTip(detection_error)
+        elif getattr(self, "_host_path", None):
+            self.usbipd_status.setToolTip(self._host_path)
         busy = self._process is not None or not self.gate.available(self)
-        self.install_usbipd_btn.setEnabled(not busy and not host)
-        self.uninstall_usbipd_btn.setEnabled(not busy and host)
+        self.install_usbipd_btn.setEnabled(not busy and not host and not detection_error)
+        self.uninstall_usbipd_btn.setEnabled(not busy and host and not detection_error)
         try:
             supported_architecture()
             supported = True

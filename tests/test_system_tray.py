@@ -211,3 +211,49 @@ def test_missing_host_offers_configuration(window):
     assert tray.connect_menu.actions()[0].text() == "Configure remote host..."
     tray.connect_menu.actions()[0].trigger()
     assert widget.centralWidget().currentWidget() is widget.client_tab
+
+
+
+def test_automatic_refresh_defers_while_busy(window):
+    _, widget, _ = window
+    assert widget._periodic_refresh.interval() == 30000
+    with patch.object(widget.tray, "refresh_devices") as refresh:
+        widget._refresh_external_state()
+        refresh.assert_called_once()
+        widget.operation_gate.acquire(widget.management_tab)
+        widget._refresh_external_state()
+        refresh.assert_called_once()
+        widget.operation_gate.release(widget.management_tab)
+
+
+
+def test_automatic_refresh_logs_only_state_changes(window):
+    from usbip_manager import UsbipDevice
+    _, widget, _ = window
+    host, tray = widget.host_tab, widget.tray
+    host._set_devices([UsbipDevice("1-1", "Stick", state="Not shared")])
+    before = host.log_widget.toPlainText()
+    tray._start_quiet_refresh(host, "Host devices", lambda: host.log("[OK] Query completed."))
+    tray._finish_quiet_refresh()
+    assert host.log_widget.toPlainText() == before
+    def changed():
+        host.devices[0].state = "Shared"
+        host.log("[OK] Query completed.")
+    tray._start_quiet_refresh(host, "Host devices", changed)
+    tray._finish_quiet_refresh()
+    assert "Host devices updated" in host.log_widget.toPlainText()
+    assert "Query completed" not in host.log_widget.toPlainText()
+
+
+def test_automatic_refresh_deduplicates_errors_and_reports_recovery(window):
+    _, widget, _ = window
+    host, tray = widget.host_tab, widget.tray
+    for _ in range(2):
+        tray._start_quiet_refresh(host, "Host devices", lambda: host.log("[ERROR] Cannot query host."))
+        tray._finish_quiet_refresh()
+    assert host.log_widget.toPlainText().count("Cannot query host") == 1
+    tray._start_quiet_refresh(host, "Host devices", lambda: host.log("[OK] Query completed."))
+    tray._finish_quiet_refresh()
+    assert "Connection restored" in host.log_widget.toPlainText()
+    host.log("Manual action")
+    assert "Manual action" in host.log_widget.toPlainText()

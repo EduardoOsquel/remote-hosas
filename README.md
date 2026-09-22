@@ -207,3 +207,21 @@ including administrator approval, operation locking and post-action refreshes.
 Tray actions report command outcomes through Windows notifications and retain
 activity in the corresponding tab log. Windows notification settings may suppress
 these notifications.
+
+Host Bind and Unbind controls follow the selected device state: only Not shared
+can be bound; Shared, Shared (forced) and Attached can be unbound. Management and
+Host use the same usbipd executable resolver; an installation folder alone does not
+count as detected. Access failures display Unavailable and disable installation
+actions until detection succeeds.
+
+Device lists refresh every 30 seconds, including while in the tray, and after the
+window regains focus (with a one-second debounce). Refreshes skip busy periods and
+never interrupt active commands. They query the configured remote host only when
+one has been entered. Joystick removal events and read failures stop monitoring,
+show Disconnected and log once. Refresh controllers to start a new session.
+
+Automatic refreshes keep the activity logs quiet when device lists and states are
+unchanged. Changes produce one summary per list. A new query failure is reported
+once, repeated identical failures are suppressed, and recovery is reported.
+Manual actions retain their normal logs; original command diagnostics remain
+available for export. These are real read-only queries, not simulated operations.

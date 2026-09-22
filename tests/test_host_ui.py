@@ -89,6 +89,9 @@ def test_selection_is_synchronized_preserved_and_used_for_bind(host):
 def test_sharing_actions_refresh_visible_state_and_keep_selection(host, action, state):
     application, widget, command = host
     widget.device_table.selectRow(1)
+    if action == "unbind":
+        widget.devices[1].state = "Shared"
+        widget._update_controls()
     before = widget.device_table.size()
     updated = OUTPUT.replace("HP True Vision HD Camera Not shared", f"HP True Vision HD Camera {state}")
     command.reset_mock()
@@ -125,3 +128,14 @@ def test_empty_or_failed_refresh_removes_stale_devices(host, failure):
     assert widget.device_table.rowCount() == 0
     assert not widget.bind_btn.isEnabled()
     assert not widget.unbind_btn.isEnabled()
+
+
+@pytest.mark.parametrize("state,bind,unbind", [("Not shared", True, False),
+    ("Shared", False, True), ("Shared (forced)", False, True),
+    ("Attached", False, True), ("", False, False)])
+def test_buttons_follow_selected_state(host, state, bind, unbind):
+    _, widget, _ = host
+    widget.devices[1].state = state
+    widget.device_combo.setCurrentIndex(1)
+    assert widget.bind_btn.isEnabled() == bind
+    assert widget.unbind_btn.isEnabled() == unbind

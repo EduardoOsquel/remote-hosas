@@ -30,6 +30,8 @@ class SystemTray(QObject):
         self.refresh_action = self.menu.addAction("Refresh devices")
         self.refresh_action.triggered.connect(self.refresh_devices)
         self._refresh_steps = []
+        self._quiet_refresh = None
+        self._refresh_errors = {}
         self._notification_source = None
         self._update_timer = QTimer(self)
         self._update_timer.setSingleShot(True)
@@ -59,6 +61,8 @@ class SystemTray(QObject):
                            self.window.client_tab, self.window.management_tab)))
 
     def _update(self):
+        if self._quiet_refresh is not None and self._idle():
+            self._finish_quiet_refresh()
         if self._refresh_steps and self._idle():
             action = self._refresh_steps.pop(0)
             action()
@@ -166,14 +170,44 @@ class SystemTray(QObject):
         if client.imported_devices:
             self._invoke(client, client.detach_all_devices)
 
-    def refresh_devices(self):
+    @staticmethod
+    def _snapshot(tab, scope):
+        devices = tab.imported_devices if scope == "Imported devices" else tab.devices
+        return tuple(sorted(repr(device) for device in devices))
+
+    def _start_quiet_refresh(self, tab, scope, action):
+        self._quiet_refresh = (tab, scope, self._snapshot(tab, scope))
+        tab._silent_logs = []
+        action()
+
+    def _finish_quiet_refresh(self):
+        tab, scope, before = self._quiet_refresh
+        messages = tab._silent_logs
+        tab._silent_logs = None
+        self._quiet_refresh = None
+        after = self._snapshot(tab, scope)
+        errors = tuple(message for message in messages if message.startswith("[ERROR]"))
+        previous_errors = self._refresh_errors.get(scope, ())
+        self._refresh_errors[scope] = errors
+        if errors:
+            if errors != previous_errors:
+                for message in errors:
+                    tab.log(message)
+        elif before != after or previous_errors:
+            tab.log(f"{scope} updated - {len(after)} device(s) detected." +
+                    (" Connection restored." if previous_errors else ""))
+
+    def refresh_devices(self, checked=False, *, automatic=False):
         if not self._idle() or self._refresh_steps:
             return
         client = self.window.client_tab
-        self._refresh_steps = [self.window.host_tab.refresh_usbipd_devices,
-                               client.refresh_imported_devices]
+        steps = [(self.window.host_tab, "Host devices", self.window.host_tab.refresh_usbipd_devices),
+                 (client, "Imported devices", client.refresh_imported_devices)]
         if client._endpoint()[0]:
-            self._refresh_steps.append(client.refresh_remote_devices)
+            steps.append((client, "Remote devices", client.refresh_remote_devices))
+        self._refresh_steps = [
+            (lambda tab=tab, scope=scope, action=action: self._start_quiet_refresh(tab, scope, action))
+            if automatic else action for tab, scope, action in steps]
         self._update_timer.start(0)
         self.rebuild_devices()
 

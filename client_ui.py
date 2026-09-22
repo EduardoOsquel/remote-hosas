@@ -102,6 +102,9 @@ class ClientModeTab(QWidget):
         return self._process is not None
 
     def log(self, message):
+        if getattr(self, "_silent_logs", None) is not None:
+            self._silent_logs.append(message)
+            return
         self.activity.emit(message)
         cursor = self.log_widget.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)

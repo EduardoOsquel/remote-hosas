@@ -134,6 +134,9 @@ class HostModeTab(QWidget):
     _make_button = staticmethod(make_button)
 
     def log(self, message: str) -> None:
+        if getattr(self, "_silent_logs", None) is not None:
+            self._silent_logs.append(message)
+            return
         self.activity.emit(message)
         self._log_buffer.append(message)
         if len(self._log_buffer) > 250:
@@ -149,8 +152,10 @@ class HostModeTab(QWidget):
         idle = not self.is_busy and self.gate.available(self)
         self.list_btn.setEnabled(idle)
         self.device_combo.setEnabled(idle and bool(self.devices))
-        self.bind_btn.setEnabled(idle and bool(self.devices))
-        self.unbind_btn.setEnabled(idle and bool(self.devices))
+        index = self.device_combo.currentIndex()
+        state = self.devices[index].state if 0 <= index < len(self.devices) else None
+        self.bind_btn.setEnabled(idle and state == "Not shared")
+        self.unbind_btn.setEnabled(idle and state in {"Shared", "Shared (forced)", "Attached"})
 
     def run_command(self, label, command, refresh=False):
         if self.is_busy or not self.gate.acquire(self):
@@ -203,6 +208,7 @@ class HostModeTab(QWidget):
     def _select_combo_device(self, index: int) -> None:
         if 0 <= index < self.device_table.rowCount():
             self.device_table.selectRow(index)
+        self._update_controls()
 
     def _set_devices(self, devices: List[UsbipDevice], empty_text: str = "No USB devices detected") -> None:
         previous = self.device_combo.currentData()
@@ -227,9 +233,7 @@ class HostModeTab(QWidget):
             self.device_combo.addItem(empty_text)
         self.device_combo.blockSignals(False)
         self.device_table.blockSignals(False)
-        self.device_combo.setEnabled(bool(devices))
-        self.bind_btn.setEnabled(bool(devices))
-        self.unbind_btn.setEnabled(bool(devices))
+        self._update_controls()
         self.device_count.setText(f"Local USB devices - {len(devices)} detected")
 
     def refresh_usbipd_devices(self):
@@ -240,6 +244,8 @@ class HostModeTab(QWidget):
         if idx < 0 or idx >= len(self.devices):
             QMessageBox.warning(self, "Warning", "Select a device from the list.")
             return
+        if self.devices[idx].state != "Not shared":
+            return
         busid = self.devices[idx].busid
         self.run_command(f"Bind device {busid}", build_usbipd_bind_command(busid), refresh=True)
 
@@ -247,6 +253,8 @@ class HostModeTab(QWidget):
         idx = self.device_combo.currentIndex()
         if idx < 0 or idx >= len(self.devices):
             QMessageBox.warning(self, "Warning", "Select a device from the list.")
+            return
+        if self.devices[idx].state not in {"Shared", "Shared (forced)", "Attached"}:
             return
         busid = self.devices[idx].busid
         self.run_command(f"Unbind device {busid}", build_usbipd_unbind_command(busid), refresh=True)
@@ -276,6 +284,8 @@ class JoystickTab(QWidget):
         self.device_combo.addItem("No joysticks detected")
         form.addRow("Local joystick:", self.device_combo)
         root.addWidget(panel)
+        self.monitor_status = QLabel("Not monitoring")
+        root.addWidget(self.monitor_status)
 
         self.connect_btn = self._make_button("Start monitoring", "connect")
         self.connect_btn.clicked.connect(self.connect_local_joystick)
@@ -307,8 +317,12 @@ class JoystickTab(QWidget):
         if self._timer is not None:
             self._timer.stop()
         if self._current_joystick is not None:
-            self._current_joystick.quit()
+            try:
+                self._current_joystick.quit()
+            except pygame.error:
+                pass
             self._current_joystick = None
+        self.monitor_status.setText("Not monitoring")
         if pygame is None:
             self.device_combo.clear()
             self.device_combo.addItem("PyGame not installed")
@@ -340,9 +354,14 @@ class JoystickTab(QWidget):
             QMessageBox.warning(self, "Warning", "Select a valid joystick.")
             return
 
-        joystick = pygame.joystick.Joystick(idx)
-        joystick.init()
+        try:
+            joystick = pygame.joystick.Joystick(idx)
+            joystick.init()
+        except pygame.error:
+            self._disconnect_monitor()
+            return
         self._current_joystick = joystick
+        self.monitor_status.setText("Monitoring")
 
         self.log_message(f"Connected to {self._devices[idx]}.")
 
@@ -353,15 +372,35 @@ class JoystickTab(QWidget):
         self._timer.timeout.connect(self.read_joystick_state)
         self._timer.start(20)
 
+    def _disconnect_monitor(self):
+        if self._timer is not None:
+            self._timer.stop()
+        joystick = self._current_joystick
+        self._current_joystick = None
+        if joystick is not None:
+            try:
+                joystick.quit()
+            except pygame.error:
+                pass
+        self.monitor_status.setText("Disconnected")
+        self.log_message("Disconnected. Refresh controllers before starting monitoring again.")
+
     def read_joystick_state(self) -> None:
         if self._current_joystick is None:
             return
 
-        pygame.event.pump()
         joystick = self._current_joystick
-        axes = [joystick.get_axis(i) for i in range(joystick.get_numaxes())]
-        buttons = [bool(joystick.get_button(i)) for i in range(joystick.get_numbuttons())]
-        hats = [joystick.get_hat(i) for i in range(joystick.get_numhats())]
+        try:
+            pygame.event.pump()
+            for event in pygame.event.get([pygame.JOYDEVICEREMOVED]):
+                if event.instance_id == joystick.get_instance_id():
+                    raise pygame.error("Controller removed")
+            axes = [joystick.get_axis(i) for i in range(joystick.get_numaxes())]
+            buttons = [bool(joystick.get_button(i)) for i in range(joystick.get_numbuttons())]
+            hats = [joystick.get_hat(i) for i in range(joystick.get_numhats())]
+        except pygame.error:
+            self._disconnect_monitor()
+            return
 
         state = JoystickState(axes=axes, buttons=buttons, hats=hats)
         packet = JoystickPacket.from_state(state)
@@ -392,9 +431,25 @@ class UsbipJoystickBridgeApp(QMainWindow):
         tabs.addTab(self.joystick_tab, "Joystick")
         self.setCentralWidget(tabs)
         self.tray = SystemTray(self)
+        self._foreground_refresh = QTimer(self)
+        self._foreground_refresh.setSingleShot(True)
+        self._foreground_refresh.setInterval(1000)
+        self._foreground_refresh.timeout.connect(self._refresh_external_state)
+        self._periodic_refresh = QTimer(self)
+        self._periodic_refresh.setInterval(30000)
+        self._periodic_refresh.timeout.connect(self._refresh_external_state)
+        self._periodic_refresh.start()
+
+    def _refresh_external_state(self):
+        if self.tray._idle() and not self.tray._refresh_steps:
+            self.management_tab.refresh_installation_status()
+            self.tray.refresh_devices(automatic=True)
 
     def changeEvent(self, event) -> None:
         super().changeEvent(event)
+        if (event.type() == QEvent.Type.ActivationChange and self.isActiveWindow()
+                and hasattr(self, "_foreground_refresh")):
+            self._foreground_refresh.start()
         if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "tray"):
             if self.isMinimized():
                 self.tray.restore_maximized = bool(event.oldState() & Qt.WindowState.WindowMaximized)
