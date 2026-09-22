@@ -9,6 +9,7 @@ from PyQt6.QtGui import QIcon
 
 APP_ID = "RemoteHosas.USBIPBridge"
 APP_NAME = "USB/IP + Joystick Bridge"
+APP_VERSION = "0.0.1"
 ICON_PATH = Path(__file__).resolve().parent / "assets" / "remote-hosas.ico"
 
 

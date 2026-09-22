@@ -1,7 +1,11 @@
 """Tray lifetime and close choices; hiding never stops background work."""
 
+import sys
+import logging
 from PyQt6.QtCore import QObject, QTimer
+from PyQt6.QtGui import QCursor
 from app_icon import APP_NAME
+from ui_icons import line_icon, device_icon_kind
 from PyQt6.QtWidgets import QMenu, QMessageBox, QSystemTrayIcon
 
 
@@ -12,6 +16,11 @@ class SystemTray(QObject):
         self.restore_maximized = False
         self.icon = QSystemTrayIcon(window.windowIcon(), self)
         self.icon.setToolTip("USB/IP + Joystick Bridge")
+        self._native_open = False
+        self._native_menu = None
+        if sys.platform == "win32":
+            from native_tray_menu import WindowsMenu
+            self._native_menu = WindowsMenu()
         self.menu = QMenu(window)
         self.show_action = self.menu.addAction("Show application")
         self.show_action.triggered.connect(self.restore)
@@ -49,7 +58,8 @@ class SystemTray(QObject):
         self.about_action.triggered.connect(self.show_about)
         self.exit_action = self.menu.addAction("Exit application")
         self.exit_action.triggered.connect(window.request_exit)
-        self.icon.setContextMenu(self.menu)
+        if self._native_menu is None:
+            self.icon.setContextMenu(self.menu)
         self.icon.activated.connect(self._activated)
         self.rebuild_devices()
         if self.available():
@@ -86,11 +96,15 @@ class SystemTray(QObject):
         menu.addAction(text).setEnabled(False)
 
     @staticmethod
-    def _device_action(menu, label, callback):
+    def _device_action(menu, label, callback, device_name=None):
         action = menu.addAction(label.replace("&", "&&"))
+        if device_name is not None:
+            action.setIcon(line_icon(device_icon_kind(device_name)))
         action.triggered.connect(lambda checked=False: callback())
 
     def rebuild_devices(self, *, force=False):
+        if self._native_open:
+            return
         # Do not destroy actions beneath the pointer while a popup is open.
         # Device actions revalidate their identifiers and the operation gate.
         if not force and any(popup.isVisible() for popup in
@@ -115,7 +129,7 @@ class SystemTray(QObject):
                 else:
                     continue
                 self._device_action(menu, f"{device.busid} - {device.name}",
-                    lambda busid=device.busid, share=share: self.share_device(busid, share))
+                    lambda busid=device.busid, share=share: self.share_device(busid, share), device.name)
             endpoint = client._endpoint()
             if not endpoint[0]:
                 self._device_action(self.connect_menu, "Configure remote host...",
@@ -126,13 +140,13 @@ class SystemTray(QObject):
                 self._placeholder(self.connect_menu, f"Host: {endpoint[0]}:{endpoint[1]}")
                 for device in client.devices:
                     self._device_action(self.connect_menu, f"{device.busid} - {device.name}",
-                        lambda busid=device.busid, endpoint=endpoint: self.connect_device(busid, endpoint))
+                        lambda busid=device.busid, endpoint=endpoint: self.connect_device(busid, endpoint), device.name)
                 if not client.devices:
                     self._placeholder(self.connect_menu, "No devices available")
             for device in client.imported_devices:
                 self._device_action(self.disconnect_menu,
                     f"Port {device.port} - {device.name} - {device.location}",
-                    lambda port=device.port, location=device.location: self.disconnect_device(port, location))
+                    lambda port=device.port, location=device.location: self.disconnect_device(port, location), device.name)
             for menu in (self.share_menu, self.unshare_menu, self.disconnect_menu):
                 if not menu.actions():
                     self._placeholder(menu, "No devices available")
@@ -284,7 +298,27 @@ class SystemTray(QObject):
         self.window.raise_()
         self.window.activateWindow()
 
+    def _show_native_menu(self):
+        if self._native_open or not self.menu.isEnabled():
+            return
+        self.rebuild_devices(force=True)
+        self._native_open = True
+        selected = None
+        try:
+            selected = self._native_menu.show(self.menu)
+        except OSError:
+            logging.getLogger(__name__).exception("Native tray menu failed; using Qt fallback")
+            self.menu.popup(QCursor.pos())
+        finally:
+            self._native_open = False
+        if selected is not None and selected.isEnabled():
+            selected.trigger()
+        self._update_timer.start(0)
+
     def _activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Context and self._native_menu is not None:
+            self._show_native_menu()
+            return
         if reason in (QSystemTrayIcon.ActivationReason.Trigger,
                       QSystemTrayIcon.ActivationReason.DoubleClick):
             self.restore()

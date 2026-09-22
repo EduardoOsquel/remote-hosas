@@ -1,7 +1,7 @@
 """Application credits, separate from future licensing decisions."""
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QVBoxLayout, QLayout
-from app_icon import APP_NAME, application_icon
+from app_icon import APP_NAME, APP_VERSION, application_icon
 
 CREATOR_NAME = "Eduardo Osquel Pérez Rivero"
 
@@ -27,6 +27,7 @@ class AboutDialog(QDialog):
         title.setWordWrap(True)
         heading.addWidget(title, 1)
         layout.addLayout(heading)
+        layout.addWidget(QLabel("Version " + APP_VERSION))
         description = QLabel("Share USB devices between Windows PCs and monitor local or imported controllers.")
         description.setWordWrap(True)
         layout.addWidget(description)

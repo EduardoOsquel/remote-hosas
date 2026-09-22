@@ -450,3 +450,28 @@ def test_open_tray_menu_keeps_actions_stable_during_refresh(window):
     application.processEvents()
     tray.rebuild_devices()
     assert tray.share_menu.actions()[0].text() == "1-2 - Camera"
+
+
+
+def test_native_context_routes_action_without_rebuilding_open_menu(window):
+    from PyQt6.QtWidgets import QSystemTrayIcon
+    _, widget, _ = window
+    tray = widget.tray
+    def choose(menu):
+        assert tray._native_open
+        original = tray.share_menu.actions()[0]
+        tray.rebuild_devices(force=True)
+        assert tray.share_menu.actions()[0] is original
+        return tray.about_action
+    with patch.object(tray._native_menu, "show", side_effect=choose), \
+         patch.object(widget, "show_about") as about:
+        tray._activated(QSystemTrayIcon.ActivationReason.Context)
+        about.assert_called_once()
+    assert not tray._native_open
+
+
+def test_native_context_cancel_does_not_trigger_action(window):
+    _, widget, quit_app = window
+    with patch.object(widget.tray._native_menu, "show", return_value=None):
+        widget.tray._show_native_menu()
+    quit_app.assert_not_called()

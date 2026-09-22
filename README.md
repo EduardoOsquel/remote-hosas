@@ -1,286 +1,172 @@
-# HOSAS + PyQt6 Joystick Bridge
+# USB/IP + Joystick Bridge (RemoteHosas)
 
-A Windows-to-Windows USB/IP interface and local joystick monitor.
-The application UI and activity messages are in English.
+A Windows desktop application for sharing USB devices between Windows PCs and monitoring local or imported joysticks. **v0.0.1** is the first public testing release. The interface and application messages are in English.
 
-## Requirements
+![Application icon](assets/remote-hosas.png)
 
-- Python 3.10+
-- PyQt6
-- pygame
-- pytest for tests
+## Download and run
 
-```bash
-pip install PyQt6 pygame pytest
-python app.py
+Download **RemoteHosas.exe** from [Releases](https://github.com/EduardoOsquel/remote-hosas/releases). This is a single-file **Windows x64** application: Python, Qt, pygame and icon assets are included. No application installer or Python installation is needed. Launch the EXE normally; it does not open a console. First launch can take a few seconds while bundled files are extracted.
+
+The USB/IP components and their drivers are separate prerequisites. Install the component needed for each PC from **Management**. The application executable is currently unsigned. A SHA-256 checksum accompanies the release for download verification.
+
+## How it works
+
+```text
+Physical USB device -> Windows HOST (usbipd-win)
+                           |
+                      USB/IP TCP 3240
+                           |
+                       Windows CLIENT (usbip-win2) -> local applications
 ```
 
-The previous `python usbip_ui.py` entry point opens the same application.
+- **Host** is the PC physically connected to the device. Sharing makes it available for a client to attach.
+- **Client** imports a shared device so Windows applications can use it. An attached device may become unavailable to applications on the host until detached.
+- A PC may have both roles, but only install the components you need. This workflow does not use WSL.
+- USB/IP performs the forwarding. The Joystick tab is a local monitor, not a separate joystick network protocol.
 
-## Project structure
+Use supported Windows versions for the upstream drivers. The included executable targets x64; the source installer helper also recognizes ARM64 assets, but this release does not include an ARM64 application build. Device and driver compatibility must be tested with your hardware.
 
-- `app.py`: main window, Host and Joystick tabs.
-- `client_ui.py`: asynchronous Windows client commands, remote exports and imported devices.
-- `management_ui.py`: component cards, detection and asynchronous management actions.
-- `ui_theme.py`: shared colors, controls and spacing.
-- `ui_icons.py`: vector icons with normal and disabled states.
-- `app_icon.py`: window icon and Windows application identity.
-- `system_tray.py`: tray icon, restore action and explicit close choices.
-- `assets/remote-hosas.svg`: original twin-joystick H/bridge artwork.
-- `assets/remote-hosas.png`: 512px preview with transparent outer corners.
-- `assets/remote-hosas.ico`: Windows icon with 16, 24, 32, 48, 64, 128 and 256px images.
-- `command_log.py`: English command summaries and original diagnostic output.
-- `usbip_manager.py`: USB/IP command builders and device-list parsing.
-- `usbip_installer.py`: official release selection, verified downloads and installer execution.
-- `restore_point.py`: elevated Windows restore-point creation and verification.
-- `joystick_bridge.py`: joystick state and packet serialization.
-- `usbip_ui.py`: compatibility launcher.
-- `tests/`: command, serialization and UI regression tests.
+## First connection: two Windows PCs
 
-## Interface
+### 1. Prepare the host
 
-### Windows-to-Windows connection
+1. Connect the physical USB device.
+2. Open **Management** and install **usbipd-win** if it is not detected. This installation uses Windows Package Manager (`winget`).
+3. Open **Host Mode**, click **List devices**, and select the device by its name and BUSID.
+4. Click **Bind / Share** and approve the administrator prompt. The table refreshes automatically; **Shared** appears in green.
+5. Identify the host address reachable from your client, for example its Ethernet IPv4 address.
 
-1. On the Windows PC with the physical USB device, install **usbipd-win** in
-   Management. In Host Mode, list devices and **Bind / Share** the desired BUSID.
-   Bind and Unbind need administrator rights on that PC.
-2. On the receiving Windows PC, install **usbip-win2** in Management. In Client
-   Mode, enter the host's LAN/Tailscale address. Leave **Server TCP port** at
-   **3240** for the normal usbipd-win service.
-3. Click **List remote devices**, select an exported device, then **Attach / Connect**.
-4. **Refresh connections** reads devices imported into this Windows PC. Select
-   an imported device and use **Detach / Disconnect** to release it.
-   **Detach all** disconnects every USB/IP device imported into this PC, including
-   devices from other hosts. It is enabled only when imported devices are detected. Both detach
-   actions refresh connections afterwards; neither stops the remote sharing service.
+### 2. Prepare the client
 
-The server firewall must permit inbound TCP 3240 from the client's network.
-The application does not change firewall rules. A custom client TCP port is only
-for an explicitly configured network port forward; it does not reconfigure the server.
-The virtual port returned by `usbip port` is an assigned USB hub slot (1-255),
-not TCP 3240. It is discovered automatically, never populated with example numbers.
+1. Open **Management** and install **usbip-win2** if needed. Read the driver and restore-point explanation before continuing.
+2. Open **Client Mode**, enter the **host PC address** and leave the server TCP port at **3240** for a standard usbipd-win setup.
+3. Click **List remote devices**, select the shared device, then **Attach / Connect**.
+4. Check the imported-device list and open the Windows application that will use the device.
 
-Host uses `usbipd list/bind/unbind`. Client uses usbip-win2's `usbip --tcp-port=3240
-list -r HOST`, `usbip --tcp-port=3240 attach -r HOST -b BUSID --once`, `usbip port`
-and `usbip detach -p VIRTUAL_PORT`. No WSL command is used. Remote queries occur
-on request; startup does not contact an example host. Client actions have a 30-second
-timeout and refresh imported and remote lists after attach/detach. Changing the
-host or TCP port invalidates the previous remote selection.
+**Use this PC** selects `127.0.0.1` for local testing; it does not locate another computer. Changing the host or port clears the previous remote selection. The virtual hub port shown for imported devices is assigned by the client driver and is different from TCP 3240.
 
-References: [usbipd-win server setup](https://github.com/dorssel/usbipd-win#how-to-use),
-[Windows client commands](https://github.com/vadimgrn/usbip-win2#use-usbipexe-to-attach-remote-devices).
+### 3. Finish a session
 
-Host keeps the device table at the available width after refresh. DEVICE absorbs
-extra space while the other columns fit their content. Drag the separator to
-adjust table and log height. Table and dropdown selection remain synchronized,
-and refresh preserves the selected BUSID when it is still available.
-Bind and Unbind automatically refresh the device list, visible states, count and
-selection after each attempt, including failures, without changing table sizing.
-Host queries existing devices and share states at startup and reports the shared
-device count. Startup also refreshes local client connections.
+Use **Detach / Disconnect** for one imported device or **Detach all** for all imports on the client, including imports from other hosts. Detach all is enabled only when connections are detected.
 
-The application uses its icon in the window and sets a Windows application ID
-when started from either launcher. Regenerate the PNG and ICO after editing the
-SVG with `python tools/build_icon.py`. The ICO is ready for future packaging;
-no executable is built by this project yet. A future packager must include the
-`assets` directory alongside the application modules.
+**Exit application** checks the current imports, disconnects them and verifies cleanup before exiting. A progress dialog allows cancelling exit; errors keep the application open. Cancelling does not reconnect devices already detached. **Host shares remain shared** after exit; use **Unbind / Stop sharing** if you want to stop sharing a host device.
 
-Minimizing sends the application to the Windows system tray and keeps background
-work running. Click its icon or use **Show application** to restore the window.
-The close button offers **Send to System Tray**, **Exit application**, and Cancel.
-The tray menu also offers **Exit application**. Exit waits for any active client
-or management command to finish rather than terminating it. Closing the application
-checks current client connections, disconnects all imported devices, and verifies
-that none remain before exiting. If cleanup fails, the window stays open with an
-error message. Host shares are preserved. Sending to the tray keeps connections active.
-If the system tray is unavailable, minimizing behaves normally and the tray choice
-is disabled. Windows controls whether the icon appears directly or in its hidden
-icons area; its position can be changed through Windows taskbar settings.
+## Network setup and troubleshooting
 
-Management groups usbipd-win and usbip-win2 into separate cards. usbipd-win detection
-checks PATH and standard installation directories. usbip-win2 detection uses its
-official Inno Setup application ID in both Windows registry views, including custom
-installation locations. Uninstall is enabled only when its registered uninstaller
-exists, and both actions are disabled while an operation is running.
+Both PCs need a reachable network path. Ethernet and Wi-Fi can work together if the router permits traffic between them. Guest Wi-Fi, client isolation, different subnets without routing, or the wrong network-adapter address can prevent access.
 
-Install for usbip-win2 queries the official GitHub latest stable release, selects
-the x64 or ARM64 installer, checks the downloaded size and published SHA-256 digest,
-and requires a valid Authenticode signature before requesting administrator access.
-Temporary downloads are removed after the action. Installation and removal use the
-vendor's installer, do not automatically restart Windows, and refresh detection
-after completion. USB devices may briefly reconnect during driver installation.
-No test-signing or Secure Boot settings are changed by this application.
-
-Before usbip-win2 installation, **Create a restore point** is checked by default.
-Management explains why the driver publisher recommends this step. After download
-verification and before running the installer, Windows PowerShell requests
-administrator approval and creates a uniquely named `DEVICE_DRIVER_INSTALL` point.
-The helper verifies that its description and new sequence number appear in Windows'
-restore-point list. A successful process launch alone is not treated as success.
-
-If Windows already has a point from the previous 24 hours, System Protection is
-unavailable, elevation is declined, or verification fails, driver installation stops.
-The log explains the reason. The user may cancel and fix System Protection, or
-explicitly confirm installation without a new point; the confirmation defaults to
-No. Unchecking the option also requires this confirmation. No protection settings,
-restore-point frequency limits or existing restore points are changed automatically.
-The point concerns system changes and is not a personal-file backup. A second UAC
-prompt may appear for driver installation. The standalone installer helper defaults
-to creating a point too; `install --skip-restore-point` is an explicit opt-out.
-
-Compatibility policy: the installed usbipd-win version is read and reported, but
-upstream publishes no version-pair compatibility matrix. The latest stable client
-is selected according to the documented Windows requirements (Windows 10 build
-18362+ on x64, Windows 11 on ARM64); the vendor installer enforces its own additional
-requirements. The server must support USB/IP 1.1.1. This is not a guarantee for every
-usbipd-win release or USB device. A local server is optional because it may run on
-another computer. If usbipd-win is not found locally, Install explicitly defaults
-to the latest stable usbip-win2 release from the official GitHub repository,
-with the same architecture, checksum and signature checks. Unknown architectures, missing assets or checksums, and failed
-verification stop the action rather than falling back to an older or unverified file.
-
-Upstream references:
-
-- [Client requirements](https://github.com/vadimgrn/usbip-win2#requirements)
-- [Official releases](https://github.com/vadimgrn/usbip-win2/releases/latest)
-- [Installer application ID and behavior](https://github.com/vadimgrn/usbip-win2/blob/master/userspace/innosetup/setup.iss)
-- [Inno Setup command-line options](https://jrsoftware.org/ishelp/topic_setupcmdline.htm)
-
-Management commands run asynchronously. The interface shows English outcome
-messages and exit codes, while Export diagnostics saves the original tool output
-as UTF-8. External programs, Windows dialogs and device names can still use the
-system language. Clear log clears visible activity, not retained diagnostics.
-Diagnostics stay in memory (the latest 100 records) until exported or the app exits.
-The window remains open while a management command is running.
-
-## Current scope
-
-The Joystick tab monitors controllers visible to local Windows, including those
-imported through USB/IP. After attaching a remote joystick, click Refresh controllers
-and Start monitoring. It reads axes, buttons and all hats every 20 ms and builds a
-Python dictionary packet. The Joystick tab does not implement a separate network
-transport: USB/IP forwarding is handled by usbipd-win and usbip-win2. Refreshing
-controllers stops an existing monitoring session; select a controller to start again.
-
-## Tests
-
-```bash
-python -m pytest -q -p no:cacheprovider
-```
-
-UI tests use Qt's offscreen platform. Management tests launch harmless Python
-processes to verify responsiveness and English summaries; they do not install or
-uninstall components. Installer tests mock downloads, registry detection and
-installer execution, including integrity failures, missing installations and UAC
-cancellation. A real driver installation is not part of the test suite.
-Restore-point creation is also simulated. PowerShell tests parse the scripts
-without running their system-changing instructions.
-
-## Command coordination
-
-Host commands run on a worker thread. Listing and Bind/Unbind have a 30-second
-execution limit. Bind/Unbind request Windows administrator approval when needed;
-UAC cancellation is reported in English. The UAC prompt remains under user control;
-the elevated command timeout starts after approval. The application waits for the
-operation to finish before permitting exit, and refreshes host state after every
-sharing attempt, including failure or cancellation.
-
-A shared operation gate serializes Host, Client and Management commands. Controls
-in other tabs are disabled while a command runs, and command entry points also
-reject conflicting requests. Host retains the gate through its post-action refresh.
-Sending the window to the system tray remains available during operations.
-
-## System tray device menu
-
-The tray offers Open tab shortcuts for Host Mode, Client Mode, Management and
-Joystick. Share device lists unshared local devices; Stop sharing lists shared,
-forced-shared and attached local devices. Connect device uses the host and TCP
-port configured in Client Mode; without a host it opens configuration instead.
-Disconnect device lists imported devices with their virtual ports and source
-locations. Disconnect all is enabled only when imported devices are detected.
-
-Refresh devices queries Host, local imports and the configured remote host in
-sequence without blocking the interface. Menus use the latest queried lists;
-use Refresh devices to discover changes made outside this application. No remote
-host is contacted merely by opening the tray menu. Actions reuse the tab commands,
-including administrator approval, operation locking and post-action refreshes.
-Tray actions report command outcomes through Windows notifications and retain
-activity in the corresponding tab log. Windows notification settings may suppress
-these notifications.
-
-Host Bind and Unbind controls follow the selected device state: only Not shared
-can be bound; Shared, Shared (forced) and Attached can be unbound. Management and
-Host use the same usbipd executable resolver; an installation folder alone does not
-count as detected. Access failures display Unavailable and disable installation
-actions until detection succeeds.
-
-Device lists refresh every 30 seconds, including while in the tray, and after the
-window regains focus (with a one-second debounce). Refreshes skip busy periods and
-never interrupt active commands. They query the configured remote host only when
-one has been entered. Joystick removal events and read failures stop monitoring,
-show Disconnected and log once. Refresh controllers to start a new session.
-
-Automatic refreshes keep the activity logs quiet when device lists and states are
-unchanged. Changes produce one summary per list. A new query failure is reported
-once, repeated identical failures are suppressed, and recovery is reported.
-Manual actions retain their normal logs; original command diagnostics remain
-available for export. These are real read-only queries, not simulated operations.
-
-User preferences are saved automatically with Qt QSettings under RemoteHosas /
-USBIPBridge in the current Windows user profile. The remote host, TCP port,
-normal window size, maximized state and Host table/log splitter are restored at
-startup. Changes are saved after a short debounce and when closing the window.
-Invalid stored numbers fall back to defaults. Saving preferences does not attach
-or share devices; the normal background read-only refresh still applies.
-
-## First standalone executable
-
-`dist/RemoteHosas.exe` is the Windows x64 single-file build. Python, Qt, pygame
-and the icon assets are bundled. Copy the EXE alone; no application installer is
-required. The USB/IP server/client drivers remain separate prerequisites managed
-from Management. Preferences remain in the Windows user profile.
-
-Build with Python 3.12 x64 in a virtual environment:
+The host must allow inbound **TCP 3240** and have its USB/IP service running. The application does not configure firewall rules. Test from the client with:
 
 ```powershell
+Test-NetConnection HOST_IP -Port 3240
+```
+
+If `TcpTestSucceeded` is false, resolve the address, routing, service or firewall issue before retrying. A custom TCP port in Client Mode does not change the server's listening port.
+
+A reachable Tailscale address can be entered as the host address when both PCs are configured appropriately. Tailscale installation, access policies and routing are outside this application. Prefer a trusted LAN or protected VPN; do not expose USB/IP directly to the public Internet.
+
+For errors, open **Management > Export diagnostics**. The export includes command results and original external-tool output, which may contain device names and network addresses. Review it before publishing it. External tool messages, Windows dialogs and device names may use the operating system language even though the application UI is English.
+
+## Features by tab
+
+### Host Mode
+
+- Detects local USB devices and existing share states at startup.
+- Keeps selection and table layout stable after refresh; drag the table/log separator to resize the panels.
+- Enables Bind and Unbind according to the selected device state.
+- Executes commands asynchronously and requests administrator permission for sharing changes when required. Declined elevation is reported.
+- Refreshes device states after sharing attempts, including failures.
+
+### Client Mode
+
+- Lists devices exported by the configured host and devices already imported locally.
+- Attaches, detaches, and disconnects all imported devices.
+- Uses asynchronous commands with time limits and refreshes connections after actions.
+- Remembers the host and TCP port between sessions.
+
+### Management
+
+- Detects the real installed executable paths, including supported custom client installation locations.
+- Installs/removes usbipd-win through winget and usbip-win2 through its official installer/uninstaller.
+- Downloads the latest stable usbip-win2 release from its official GitHub repository, selects the architecture, and checks size, published SHA-256 and Authenticode signature before installation.
+- Reports the installed local server version when available. There is no certified version-pair compatibility matrix: selecting the latest stable client is not a guarantee for every server version or device. If no local server exists, the latest stable client is still selected; the server may be on another PC.
+- Disables client uninstall when no registered uninstaller is available.
+- Offers log clearing, diagnostic export and **About** with version and author details.
+
+**Restore points:** creating a Windows restore point before client driver installation is enabled by default. The helper requests administrator access and verifies creation. If System Protection is unavailable, Windows' creation-frequency limit is reached, or verification fails, installation stops. Proceeding without a new point requires explicit confirmation. The application does not automatically enable System Protection, change its frequency limits, or restart Windows. A restore point is not a backup of personal files.
+
+### Joystick
+
+Refresh controllers, select a local or imported joystick, and start monitoring axes, buttons and hats. Readings refresh every 20 ms. Disconnection stops monitoring and shows **Disconnected** instead of repeatedly logging errors. Refresh and start again after reconnecting. The tab does not implement remapping, virtual controller emulation, or its own network transport.
+
+## System tray and background behavior
+
+Minimizing hides the window in the system tray. Closing the window offers **Send to System Tray**, **Exit application**, or cancel. Sending to the tray keeps active connections. Windows controls whether the icon is in the hidden-icons panel or directly on the taskbar.
+
+Right-click the icon to show the application, open a tab, share/stop sharing a local device, connect/disconnect a device, disconnect all, refresh device lists, view About, or exit. Connect uses the host configured in Client Mode. Menus use the latest known lists; merely opening the menu does not query the remote host.
+
+Windows uses native popup menus with dark appearance where supported, preserving native submenu integration. Device icons are inferred from names (gaming, mouse, keyboard, camera, audio, network); unknown devices use a generic USB icon. High-contrast settings take precedence. Unsupported native styling falls back to the system appearance.
+
+Automatic checks run every 30 seconds and when returning to the window. Unchanged states do not produce interface log entries or make buttons flicker. **Remote automatic queries run only while Client Mode is visible**; Host Mode and the hidden tray continue local checks without contacting a saved remote IP. Manual tray refresh explicitly includes the configured remote host.
+
+Manual actions take priority over background client list queries. Host, Client and Management operations are coordinated to prevent conflicting commands. Read-only background queries can be interrupted; installation and device-changing commands are not interrupted this way. Exit cleanup has an overall deadline and cancellation control.
+
+Preferences are stored per Windows user through QSettings (`RemoteHosas / USBIPBridge`): host, port, window size/maximized state and Host separator position. Saving preferences does not automatically attach or share devices. Diagnostics retain the most recent 100 command records in memory until exit or export.
+
+## Run from source
+
+Developed and packaged with Python 3.12 x64. From the project directory:
+
+```powershell
+py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.venv\Scripts\python.exe launcher.py
+```
+
+`app.py` and the compatibility launcher `usbip_ui.py` also open the application. Running from an existing terminal does not close that terminal.
+
+## Build the single-file executable
+
+```powershell
 .venv\Scripts\python.exe -m PyInstaller --noconfirm RemoteHosas.spec
 ```
 
-The executable uses windowed mode and does not allocate a console. The embedded
-Management helper preserves redirected output for progress and diagnostics.
-The launcher has `--smoke-test` (loads Qt, application modules and icon, shows a
-brief test window, then exits) and an internal `--installer-helper` entry point.
-No installer or code-signing certificate is included in this build.
+Output: `dist/RemoteHosas.exe`. `build.ps1` uses the same specification. The build bundles application assets, uses windowed mode, includes version metadata, and preserves redirected Management helper diagnostics without allocating a console. No application installer is produced.
 
-Background status checks preserve button enabled states and retain device lists
-while querying. Unchanged results do not rebuild the device widgets. A manual
-action requested during a background query is deferred until it completes; the
-remaining background queries yield to that action. Manual operations retain the
-normal shared operation lock. Tray menu hover uses a contrasting blue highlight.
+## Tests
 
-Windowed builds recover the stdout/stderr pipe handles supplied by Management
-without allocating a console, so helper progress and diagnostic output remain
-available. Running app.py from an existing terminal does not close that terminal.
-Rebuilding is required for an existing EXE to adopt the windowed configuration.
+```powershell
+.venv\Scripts\python.exe -m pip install pytest
+.venv\Scripts\python.exe -B -m pytest -q -p no:cacheprovider
+```
 
-Closing during an automatic status query suspends further polling, discards queued
-user actions and waits for that query before disconnecting imports. A progress
-window reports cleanup and offers Cancel exit. A 100-second overall deadline
-returns control if cleanup cannot complete. Cancellation does not reconnect devices
-already detached; host shares are untouched. Busy/failed command dispatch always
-reports failure to the exit workflow instead of leaving it waiting for a callback.
+Tests cover parsers, command coordination, device state handling, UI workflows, installation verification, restore points, shutdown and native menus. System-changing operations are mocked; tests do not install drivers or create actual restore points. UI tests use Qt's offscreen platform. Real hardware, elevation dialogs, network connectivity and Windows tray appearance still need manual testing.
 
-Manual actions (including tray actions and exit) now interrupt active Client
-background list queries rather than waiting for a remote connection timeout.
-Cancellation preserves the last device list and does not emit a query error.
-Only read-only background queries are interruptible; attach/detach, sharing and
-installation commands are not cancelled this way. Automatic remote queries use
-a five-second timeout; manually requested queries retain their 30-second limit.
+The packaged `--smoke-test` checks loading Qt, application modules and icons, then exits. It does not perform a USB/IP session.
 
-Automatic remote host polling runs only while Client Mode is the visible tab.
-Leaving Client Mode or hiding the window cancels an in-flight automatic remote
-query, and queued remote polls recheck visibility before starting. A saved IP alone
-does not trigger network queries in Host Mode. Local host/import checks continue
-for accurate sharing and connection state. Manual tray Refresh devices still
-queries the configured host. Entering Client Mode schedules a debounced refresh.
+## Project structure
+
+| Files | Responsibility |
+| --- | --- |
+| `app.py`, `client_ui.py`, `management_ui.py`, `about_ui.py` | Application window and tabs |
+| `usbip_manager.py`, `host_commands.py`, `operation_gate.py` | Discovery, command execution and coordination |
+| `usbip_installer.py`, `restore_point.py` | Verified client installation and restore points |
+| `system_tray.py`, `native_tray_menu.py`, `native_menu_style.py` | Tray actions and native Windows menus |
+| `ui_theme.py`, `ui_icons.py`, `app_icon.py`, `assets/` | Styling, icons and identity |
+| `joystick_bridge.py` | Controller state and packet serialization |
+| `command_log.py`, `windowed_io.py` | Diagnostics and windowed helper output |
+| `launcher.py`, `RemoteHosas.spec`, `version_info.txt` | Executable entry point and packaging |
+| `tests/` | Automated regression checks |
+
+## Author and components
+
+Created by **Eduardo Osquel Pérez Rivero**. Contact: [eduardoosquel@hotmail.com](mailto:eduardoosquel@hotmail.com) · [GitHub](https://github.com/EduardoOsquel).
+
+Currently provided at no charge. Future versions may have different availability or licensing terms. No new project license is introduced by this release; third-party components retain their respective licenses.
+
+- [usbipd-win](https://github.com/dorssel/usbipd-win): Windows USB/IP server.
+- [usbip-win2](https://github.com/vadimgrn/usbip-win2): Windows USB/IP client and driver; consult its requirements and installation guidance.
+- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/): Qt bindings for the interface.
+- [pygame](https://www.pygame.org/): controller monitoring.
+- [PyInstaller](https://pyinstaller.org/): standalone executable packaging.
