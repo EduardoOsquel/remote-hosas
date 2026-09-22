@@ -8,7 +8,7 @@ from command_log import record_exception, record_result
 from ui_theme import setup_page, make_button
 from usbip_manager import (USBIP_TCP_PORT, build_usbip_list_command,
     build_usbip_attach_command, build_usbip_detach_command, parse_remote_devices,
-    parse_imported_devices, resolve_usbip_client)
+    parse_imported_devices, resolve_usbip_client, build_usbip_detach_all_command)
 
 
 class ClientModeTab(QWidget):
@@ -67,8 +67,12 @@ class ClientModeTab(QWidget):
         self.refresh_imported_btn.clicked.connect(lambda: self.refresh_imported_devices())
         self.detach_btn = make_button("Detach / Disconnect", "disconnect")
         self.detach_btn.clicked.connect(self.detach_selected_device)
+        self.detach_all_btn = make_button("Detach all", "disconnect")
+        self.detach_all_btn.setToolTip("Disconnect all USB/IP devices imported into this PC, from every host.")
+        self.detach_all_btn.clicked.connect(self.detach_all_devices)
         local_actions.addWidget(self.refresh_imported_btn)
         local_actions.addWidget(self.detach_btn)
+        local_actions.addWidget(self.detach_all_btn)
         local_actions.addStretch()
         local_layout.addLayout(local_actions)
         root.addWidget(local)
@@ -114,6 +118,7 @@ class ClientModeTab(QWidget):
         self.refresh_imported_btn.setEnabled(idle)
         self.port_input.setEnabled(idle and bool(self.imported_devices))
         self.detach_btn.setEnabled(idle and bool(self.imported_devices))
+        self.detach_all_btn.setEnabled(idle and bool(self.imported_devices))
 
     def _set_imported(self, devices):
         previous = self.port_input.currentData()
@@ -179,7 +184,40 @@ class ClientModeTab(QWidget):
         self._run(f"Detach virtual port {port}", build_usbip_detach_command(str(port)),
                   after=self._refresh_after_action)
 
-    def _run(self, label, command, callback=None, after=None):
+    def detach_all_devices(self):
+        if self.is_busy or not self.imported_devices:
+            return
+        self._run("Detach all imported USB devices", build_usbip_detach_all_command(),
+                  after=self._refresh_after_action)
+
+    def disconnect_before_exit(self, done):
+        """Query fresh state, detach all imports and verify before allowing exit."""
+        from usbip_installer import find_client_installation
+        try:
+            resolve_usbip_client()
+        except FileNotFoundError:
+            # Host-only installations have no client devices to clean up.
+            done(not self.imported_devices and find_client_installation() is None)
+            return
+        def failed():
+            done(False)
+        def verified(output):
+            devices = parse_imported_devices(output)
+            self._set_imported(devices)
+            done(not devices)
+        def detached(output):
+            self._run("Verify devices are disconnected", ["usbip", "port"], verified, on_failure=failed)
+        def listed(output):
+            devices = parse_imported_devices(output)
+            self._set_imported(devices)
+            if not devices:
+                done(True)
+            else:
+                self._run("Disconnect all devices before exit", build_usbip_detach_all_command(),
+                          detached, on_failure=failed)
+        self._run("Check connections before exit", ["usbip", "port"], listed, on_failure=failed)
+
+    def _run(self, label, command, callback=None, after=None, on_failure=None):
         if self.is_busy:
             return
         try:
@@ -188,9 +226,12 @@ class ClientModeTab(QWidget):
             self.log(record_exception(label, command, error))
             self.log("Install usbip-win2 in Management on this Windows client.")
             self._update_controls()
+            if on_failure:
+                on_failure()
             return
         self._label, self._command = label, command
         self._callback, self._after = callback, after
+        self._on_failure = on_failure
         self._timed_out = False
         process = QProcess(self)
         self._process = process
@@ -209,7 +250,10 @@ class ClientModeTab(QWidget):
     def _error(self, error):
         if error == QProcess.ProcessError.FailedToStart and self._process:
             self.log(record_exception(self._label, self._command, OSError(self._process.errorString())))
+            failed = self._on_failure
             self._cleanup()
+            if failed:
+                failed()
 
     def _cleanup(self):
         self._timer.stop()
@@ -222,13 +266,15 @@ class ClientModeTab(QWidget):
         error = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
         if self._timed_out or status == QProcess.ExitStatus.CrashExit:
             code = code or -1
-        callback, after = self._callback, self._after
+        callback, after, failed = self._callback, self._after, self._on_failure
         self.log(record_result(self._label, self._command, code, output, error))
         if self._timed_out:
             self.log("The command timed out. Check the host address, USB/IP service and TCP 3240 firewall access.")
         self._cleanup()
         if code == 0 and callback:
             callback(output)
+        elif code != 0 and failed:
+            failed()
         self._update_controls()
         if after:
             after()

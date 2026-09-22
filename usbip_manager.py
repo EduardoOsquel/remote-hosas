@@ -109,6 +109,10 @@ def build_usbip_detach_command(port: str) -> List[str]:
     return ["usbip", "detach", "-p", str(int(port))]
 
 
+def build_usbip_detach_all_command() -> List[str]:
+    return ["usbip", "detach", "--all"]
+
+
 def resolve_usbip_client() -> str:
     # The official installer need not add its folder to this process's PATH.
     from usbip_installer import find_client_installation

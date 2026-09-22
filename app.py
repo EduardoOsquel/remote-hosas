@@ -2,7 +2,7 @@ import subprocess
 import sys
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -32,6 +32,7 @@ from client_ui import ClientModeTab
 from command_log import record_exception, record_result
 from ui_theme import APP_STYLESHEET, make_button, setup_page
 from app_icon import application_icon, set_windows_app_id
+from system_tray import SystemTray
 
 from joystick_bridge import JoystickPacket, JoystickState
 from usbip_manager import (
@@ -187,6 +188,8 @@ class HostModeTab(QWidget):
                 return
             self._set_devices(parse_usbipd_list(result.stdout))
             self.log(f"[OK] Detected {len(self.devices)} USB device(s).")
+            shared = sum(device.state in {"Shared", "Shared (forced)", "Attached"} for device in self.devices)
+            self.log(f"Shared host devices: {shared}. Sharing remains enabled when this application exits.")
         except Exception as exc:
             self._set_devices([], "Unable to list devices")
             self.log(record_exception("List USB devices", ["usbipd", "list"], exc))
@@ -329,6 +332,9 @@ class JoystickTab(QWidget):
 class UsbipJoystickBridgeApp(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self._exit_requested = False
+        self._shutdown_pending = False
+        self._shutdown_ready = False
         self.setWindowTitle("USB/IP + Joystick Bridge")
         self.setWindowIcon(application_icon())
         self.resize(1100, 800)
@@ -341,31 +347,86 @@ class UsbipJoystickBridgeApp(QMainWindow):
         tabs.addTab(self.client_tab, "Client Mode")
         self.management_tab = ManagementTab()
         tabs.addTab(self.management_tab, "Management")
-        tabs.addTab(JoystickTab(), "Joystick")
+        self.joystick_tab = JoystickTab()
+        tabs.addTab(self.joystick_tab, "Joystick")
         self.setCentralWidget(tabs)
+        self.tray = SystemTray(self)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "tray"):
+            if self.isMinimized():
+                self.tray.restore_maximized = bool(event.oldState() & Qt.WindowState.WindowMaximized)
+                QTimer.singleShot(0, self._minimize_to_tray)
+
+    def _minimize_to_tray(self):
+        if self.isMinimized():
+            self.tray.hide_window()
+
+    def request_exit(self):
+        self._exit_requested = True
+        self.close()
 
     def closeEvent(self, event) -> None:
+        if self._shutdown_ready:
+            self.tray.icon.hide()
+            event.accept()
+            QApplication.instance().quit()
+            return
+        if self._shutdown_pending:
+            self._exit_requested = False
+            event.ignore()
+            return
+        choice = "exit" if self._exit_requested else self.tray.choose_close_action()
+        self._exit_requested = False
+        if choice != "exit":
+            event.ignore()
+            if choice == "tray":
+                self.tray.hide_window()
+            return
         if self.client_tab.is_busy:
+            self.tray.restore()
             self.centralWidget().setCurrentWidget(self.client_tab)
             self.client_tab.log("Wait for the current client action to finish before closing.")
             event.ignore()
             return
         if self.management_tab.is_busy:
+            self.tray.restore()
             self.centralWidget().setCurrentWidget(self.management_tab)
             self.management_tab.operation_status.setText(
                 "An action is still running. Wait for it to finish before closing.")
             event.ignore()
             return
-        super().closeEvent(event)
+        event.ignore()
+        self._shutdown_pending = True
+        if self.joystick_tab._timer is not None:
+            self.joystick_tab._timer.stop()
+        self.centralWidget().setEnabled(False)
+        self.client_tab.disconnect_before_exit(self._finish_exit)
+
+    def _finish_exit(self, success):
+        self._shutdown_pending = False
+        self.centralWidget().setEnabled(True)
+        if success:
+            self._shutdown_ready = True
+            self.tray.icon.hide()
+            self.hide()
+            QApplication.instance().quit()
+        else:
+            self.tray.restore()
+            self.centralWidget().setCurrentWidget(self.client_tab)
+            self.client_tab.log("Exit cancelled: USB/IP devices could not be confirmed disconnected. Refresh connections and retry Exit.")
 
 
 def main() -> None:
     set_windows_app_id()
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     app.setStyle("Fusion")
     app.setWindowIcon(application_icon())
     window = UsbipJoystickBridgeApp()
     window.show()
+    QTimer.singleShot(0, window.client_tab.refresh_imported_devices)
     sys.exit(app.exec())
 
 

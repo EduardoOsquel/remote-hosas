@@ -25,6 +25,7 @@ The previous `python usbip_ui.py` entry point opens the same application.
 - `ui_theme.py`: shared colors, controls and spacing.
 - `ui_icons.py`: vector icons with normal and disabled states.
 - `app_icon.py`: window icon and Windows application identity.
+- `system_tray.py`: tray icon, restore action and explicit close choices.
 - `assets/remote-hosas.svg`: original twin-joystick H/bridge artwork.
 - `assets/remote-hosas.png`: 512px preview with transparent outer corners.
 - `assets/remote-hosas.ico`: Windows icon with 16, 24, 32, 48, 64, 128 and 256px images.
@@ -49,6 +50,9 @@ The previous `python usbip_ui.py` entry point opens the same application.
 3. Click **List remote devices**, select an exported device, then **Attach / Connect**.
 4. **Refresh connections** reads devices imported into this Windows PC. Select
    an imported device and use **Detach / Disconnect** to release it.
+   **Detach all** disconnects every USB/IP device imported into this PC, including
+   devices from other hosts. It is enabled only when imported devices are detected. Both detach
+   actions refresh connections afterwards; neither stops the remote sharing service.
 
 The server firewall must permit inbound TCP 3240 from the client's network.
 The application does not change firewall rules. A custom client TCP port is only
@@ -72,12 +76,26 @@ adjust table and log height. Table and dropdown selection remain synchronized,
 and refresh preserves the selected BUSID when it is still available.
 Bind and Unbind automatically refresh the device list, visible states, count and
 selection after each attempt, including failures, without changing table sizing.
+Host queries existing devices and share states at startup and reports the shared
+device count. Startup also refreshes local client connections.
 
 The application uses its icon in the window and sets a Windows application ID
 when started from either launcher. Regenerate the PNG and ICO after editing the
 SVG with `python tools/build_icon.py`. The ICO is ready for future packaging;
 no executable is built by this project yet. A future packager must include the
 `assets` directory alongside the application modules.
+
+Minimizing sends the application to the Windows system tray and keeps background
+work running. Click its icon or use **Show application** to restore the window.
+The close button offers **Send to System Tray**, **Exit application**, and Cancel.
+The tray menu also offers **Exit application**. Exit waits for any active client
+or management command to finish rather than terminating it. Closing the application
+checks current client connections, disconnects all imported devices, and verifies
+that none remain before exiting. If cleanup fails, the window stays open with an
+error message. Host shares are preserved. Sending to the tray keeps connections active.
+If the system tray is unavailable, minimizing behaves normally and the tray choice
+is disabled. Windows controls whether the icon appears directly or in its hidden
+icons area; its position can be changed through Windows taskbar settings.
 
 Management groups usbipd-win and usbip-win2 into separate cards. usbipd-win detection
 checks PATH and standard installation directories. usbip-win2 detection uses its

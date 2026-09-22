@@ -45,6 +45,55 @@ def test_client_starts_without_fake_devices_or_ports(client):
     assert widget.port_input.currentData() is None
 
 
+def test_detach_all_covers_all_hosts_and_refreshes_connections(client):
+    _, widget = client
+    assert not widget.detach_all_btn.isEnabled()
+    from usbip_manager import parse_imported_devices
+    widget._set_imported(parse_imported_devices(IMPORTED))
+    assert widget.detach_all_btn.isEnabled()
+    with patch.object(widget, "_run") as run:
+        widget.detach_all_btn.click()
+        assert run.call_args.args[1] == ["usbip", "detach", "--all"]
+        assert run.call_args.kwargs["after"] == widget._refresh_after_action
+    widget._process = object()
+    widget._update_controls()
+    assert not widget.detach_all_btn.isEnabled()
+    with patch.object(widget, "_run") as run:
+        widget.detach_all_devices()
+        run.assert_not_called()
+    widget._process = None
+    widget._set_imported([])
+    assert not widget.detach_all_btn.isEnabled()
+
+
+@pytest.mark.parametrize("remaining", ["", IMPORTED])
+def test_exit_detaches_and_verifies_fresh_connections(client, remaining):
+    _, widget = client
+    commands, results = [], []
+    outputs = iter([IMPORTED, "", remaining])
+    def run(label, command, callback=None, after=None, on_failure=None):
+        commands.append(command)
+        callback(next(outputs))
+    with patch("client_ui.resolve_usbip_client", return_value="usbip.exe"), \
+            patch.object(widget, "_run", side_effect=run):
+        widget.disconnect_before_exit(results.append)
+    assert commands == [["usbip", "port"], ["usbip", "detach", "--all"], ["usbip", "port"]]
+    assert results == [not bool(remaining)]
+
+
+def test_exit_failure_is_reported_and_host_only_can_exit(client):
+    _, widget = client
+    results = []
+    with patch("client_ui.resolve_usbip_client", return_value="usbip.exe"), \
+            patch.object(widget, "_run", side_effect=lambda *args, **kwargs: kwargs["on_failure"]()):
+        widget.disconnect_before_exit(results.append)
+    assert results == [False]
+    with patch("client_ui.resolve_usbip_client", side_effect=FileNotFoundError), \
+            patch("usbip_installer.find_client_installation", return_value=None):
+        widget.disconnect_before_exit(results.append)
+    assert results == [False, True]
+
+
 def test_listing_and_attach_use_remote_host_not_local_usbipd(client):
     _, widget = client
     widget.host_input.setText("host-pc")

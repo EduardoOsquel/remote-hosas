@@ -19,6 +19,17 @@ BUSID VID:PID DEVICE STATE
 """
 
 
+def test_host_startup_detects_existing_shares_without_changing_them(host):
+    application, _, _ = host
+    output = OUTPUT.replace("Not shared", "Shared", 1)
+    with patch("app.subprocess.run", return_value=CompletedProcess([], 0, output, "")) as command:
+        widget = HostModeTab()
+    assert widget.device_table.item(0, 3).text() == "Shared"
+    assert "Shared host devices: 1" in widget.log_widget.toPlainText()
+    assert [call.args[0] for call in command.call_args_list] == [["usbipd", "list"]]
+    widget.deleteLater()
+
+
 @pytest.fixture
 def host():
     application = QApplication.instance() or QApplication([])

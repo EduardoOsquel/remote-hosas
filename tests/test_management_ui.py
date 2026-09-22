@@ -160,11 +160,15 @@ def test_window_stays_open_during_management_action(management):
         window = UsbipJoystickBridgeApp()
     window.management_tab._process = object()
     event = QCloseEvent()
-    window.closeEvent(event)
+    with patch.object(window.tray, "choose_close_action", return_value="exit"):
+        window.closeEvent(event)
     assert not event.isAccepted()
     assert window.centralWidget().currentWidget() is window.management_tab
     window.management_tab._process = None
     event = QCloseEvent()
-    window.closeEvent(event)
-    assert event.isAccepted()
+    with patch.object(window.tray, "choose_close_action", return_value="exit"), \
+            patch.object(window.client_tab, "disconnect_before_exit", side_effect=lambda done: done(True)), \
+            patch.object(QApplication.instance(), "quit"):
+        window.closeEvent(event)
+    assert window._shutdown_ready
     window.deleteLater()
