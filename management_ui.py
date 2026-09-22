@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from operation_gate import OperationGate
+from operation_gate import OperationGate, defer_background_action
 from host_commands import resolve_host
 from command_log import DIAGNOSTICS, record_exception, record_result
 from ui_theme import make_button, setup_page
@@ -181,6 +181,8 @@ class ManagementTab(QWidget):
         return find_client_installation() is not None
 
     def refresh_installation_status(self) -> None:
+        if self.gate.background:
+            return
         host = self._is_usbipd_installed()
         client = self._is_usbip_win2_installed()
         for badge, detected in ((self.usbipd_status, host), (self.usbip_win2_status, client)):
@@ -291,12 +293,15 @@ class ManagementTab(QWidget):
         self.progress.hide()
         self.refresh_installation_status()
 
+    @defer_background_action
     def install_usbipd(self):
         self._start_command("Install usbipd-win", build_usbipd_install_command())
 
+    @defer_background_action
     def uninstall_usbipd(self):
         self._start_command("Uninstall usbipd-win", ["winget", "uninstall", "usbipd"])
 
+    @defer_background_action
     def install_usbip_win2(self):
         if self.is_busy or self._is_usbip_win2_installed():
             return
@@ -323,6 +328,7 @@ class ManagementTab(QWidget):
             command.append("--skip-restore-point")
         self._start_command("Install usbip-win2", command, client_action=True)
 
+    @defer_background_action
     def uninstall_usbip_win2(self):
         installation = find_client_installation()
         if self.is_busy or not installation or not installation.uninstaller:

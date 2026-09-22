@@ -172,8 +172,14 @@ def build_usbipd_install_command() -> List[str]:
 
 
 def build_usbip_win2_install_command() -> List[str]:
-    return [sys.executable, "-u", str(Path(__file__).with_name("usbip_installer.py")), "install"]
+    return installer_command("install")
 
 
 def build_usbip_win2_uninstall_command() -> List[str]:
-    return [sys.executable, "-u", str(Path(__file__).with_name("usbip_installer.py")), "uninstall"]
+    return installer_command("uninstall")
+
+
+def installer_command(action):
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--installer-helper", action]
+    return [sys.executable, "-u", str(Path(__file__).with_name("usbip_installer.py")), action]

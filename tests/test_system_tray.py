@@ -291,3 +291,24 @@ def test_invalid_preferences_use_defaults(window):
     assert widget.client_tab.tcp_port_input.value() == 3240
     assert widget.size().width() == 1100
     assert widget.size().height() == 800
+
+
+
+def test_background_query_keeps_controls_and_queues_manual_action(window):
+    from usbip_manager import UsbipDevice
+    application, widget, _ = window
+    host, tray = widget.host_tab, widget.tray
+    host._set_devices([UsbipDevice("1-1", "Stick", state="Not shared")])
+    tray._start_quiet_refresh(host, "Host devices", lambda: widget.operation_gate.acquire(host))
+    assert host.bind_btn.isEnabled()
+    assert host.list_btn.isEnabled()
+    assert widget.client_tab.refresh_imported_btn.isEnabled()
+    with patch.object(host, "run_command") as run:
+        host.bind_btn.click()
+        run.assert_not_called()
+        assert widget.operation_gate.pending_action is not None
+        widget.operation_gate.release(host)
+        tray._finish_quiet_refresh()
+        for _ in range(5):
+            application.processEvents()
+        run.assert_called_once()

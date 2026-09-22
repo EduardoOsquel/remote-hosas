@@ -29,6 +29,7 @@ class SystemTray(QObject):
         self.disconnect_all_action.triggered.connect(self.disconnect_all)
         self.refresh_action = self.menu.addAction("Refresh devices")
         self.refresh_action.triggered.connect(self.refresh_devices)
+        self._automatic_cycle = False
         self._refresh_steps = []
         self._quiet_refresh = None
         self._refresh_errors = {}
@@ -67,6 +68,8 @@ class SystemTray(QObject):
             action = self._refresh_steps.pop(0)
             action()
             self._update_timer.start(0)
+        if not self._refresh_steps and self._idle():
+            self._automatic_cycle = False
         self.rebuild_devices()
 
     @staticmethod
@@ -79,6 +82,8 @@ class SystemTray(QObject):
         action.triggered.connect(lambda checked=False: callback())
 
     def rebuild_devices(self):
+        if self.window.operation_gate.background or self._automatic_cycle:
+            return
         host, client = self.window.host_tab, self.window.client_tab
         idle = self._idle() and not self._refresh_steps
         for menu in (self.share_menu, self.unshare_menu, self.connect_menu, self.disconnect_menu):
@@ -120,6 +125,18 @@ class SystemTray(QObject):
         self.refresh_action.setEnabled(idle)
 
     def _invoke(self, source, action):
+        gate = self.window.operation_gate
+        if gate.background:
+            if gate.pending_action is None:
+                def retry():
+                    if gate.background or not self._idle():
+                        QTimer.singleShot(25, retry)
+                        return
+                    gate.pending_action = None
+                    self._invoke(source, action)
+                gate.pending_action = retry
+                QTimer.singleShot(0, retry)
+            return
         if not self._idle() or self._refresh_steps:
             return
         self._notification_source = source
@@ -178,13 +195,24 @@ class SystemTray(QObject):
     def _start_quiet_refresh(self, tab, scope, action):
         self._quiet_refresh = (tab, scope, self._snapshot(tab, scope))
         tab._silent_logs = []
-        action()
+        gate = self.window.operation_gate
+        gate.background = True
+        gate.starting_background = True
+        try:
+            action()
+        finally:
+            gate.starting_background = False
 
     def _finish_quiet_refresh(self):
         tab, scope, before = self._quiet_refresh
         messages = tab._silent_logs
         tab._silent_logs = None
         self._quiet_refresh = None
+        gate = self.window.operation_gate
+        gate.background = False
+        if gate.pending_action is not None:
+            self._refresh_steps.clear()
+        gate.changed.emit()
         after = self._snapshot(tab, scope)
         errors = tuple(message for message in messages if message.startswith("[ERROR]"))
         previous_errors = self._refresh_errors.get(scope, ())
@@ -200,6 +228,7 @@ class SystemTray(QObject):
     def refresh_devices(self, checked=False, *, automatic=False):
         if not self._idle() or self._refresh_steps:
             return
+        self._automatic_cycle = automatic
         client = self.window.client_tab
         steps = [(self.window.host_tab, "Host devices", self.window.host_tab.refresh_usbipd_devices),
                  (client, "Imported devices", client.refresh_imported_devices)]

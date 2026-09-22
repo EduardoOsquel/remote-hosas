@@ -92,5 +92,10 @@ QScrollBar:vertical { background: #121c2a; width: 12px; margin: 0; }
 QScrollBar::handle:vertical { background: #405570; min-height: 28px; border-radius: 5px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QMenu { background: #182232; color: #e6edf7; border: 1px solid #405570; padding: 5px; }
+QMenu::item { padding: 8px 28px 8px 14px; border-radius: 4px; }
+QMenu::item:selected { background: #326ac5; color: #ffffff; }
+QMenu::item:disabled { color: #8291a6; background: transparent; }
+QMenu::separator { height: 1px; background: #384961; margin: 5px 8px; }
 QToolTip { background: #223148; color: #ffffff; border: 1px solid #405570; padding: 5px; }
 """

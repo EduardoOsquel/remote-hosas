@@ -15,10 +15,18 @@ ICON_PATH = Path(__file__).resolve().parent / "assets" / "remote-hosas.ico"
 def register_notification_identity():
     """Register presentation metadata for this user, without administrator rights."""
     import winreg
+    icon_path = ICON_PATH
+    if getattr(sys, "frozen", False):
+        import os
+        import shutil
+        target = Path(os.environ["LOCALAPPDATA"]) / "RemoteHosas" / "remote-hosas.ico"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ICON_PATH, target)
+        icon_path = target
     with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,
             rf"Software\Classes\AppUserModelId\{APP_ID}", 0, winreg.KEY_SET_VALUE) as key:
         winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, APP_NAME)
-        winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, str(ICON_PATH))
+        winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, str(icon_path))
 
 
 def application_icon() -> QIcon:

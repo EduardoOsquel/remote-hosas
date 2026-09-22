@@ -4,7 +4,7 @@ from PyQt6.QtCore import pyqtSignal, QProcess, QTimer
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
                             QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox, QTextEdit)
 
-from operation_gate import OperationGate
+from operation_gate import OperationGate, defer_background_action
 from command_log import record_exception, record_result
 from ui_theme import setup_page, make_button
 from usbip_manager import (USBIP_TCP_PORT, build_usbip_list_command,
@@ -112,6 +112,7 @@ class ClientModeTab(QWidget):
         self.log_widget.setTextCursor(cursor)
         self.log_widget.ensureCursorVisible()
 
+    @defer_background_action
     def use_local_host(self):
         if self.is_busy or not self.gate.available(self):
             return
@@ -130,6 +131,8 @@ class ClientModeTab(QWidget):
         self._update_controls()
 
     def _update_controls(self):
+        if self.gate.background:
+            return
         idle = not self.is_busy and self.gate.available(self)
         self.host_input.setEnabled(idle)
         self.local_host_btn.setEnabled(idle)
@@ -143,6 +146,8 @@ class ClientModeTab(QWidget):
         self.detach_all_btn.setEnabled(idle and bool(self.imported_devices))
 
     def _set_imported(self, devices):
+        if self.gate.background and self.imported_devices == devices:
+            return
         previous = self.port_input.currentData()
         self.imported_devices = devices
         self.port_input.clear()
@@ -154,6 +159,7 @@ class ClientModeTab(QWidget):
             self.port_input.setCurrentIndex(max(0, self.port_input.findData(previous)))
         self._update_controls()
 
+    @defer_background_action
     def refresh_remote_devices(self):
         if self.is_busy:
             return
@@ -161,9 +167,15 @@ class ClientModeTab(QWidget):
         if not host:
             return
         previous = self.device_combo.currentData()
-        self._invalidate_remote()
+        if not self.gate.background:
+            self._invalidate_remote()
         def listed(output):
-            self.devices = parse_remote_devices(output)
+            if (host, tcp_port) != self._endpoint():
+                return
+            devices = parse_remote_devices(output)
+            if self.gate.background and devices == self.devices and self._listed_endpoint == (host, tcp_port):
+                return
+            self.devices = devices
             self._listed_endpoint = (host, tcp_port)
             self.device_combo.clear()
             for device in self.devices:
@@ -175,11 +187,13 @@ class ClientModeTab(QWidget):
             self.log(f"Detected {len(self.devices)} exportable USB device(s) on {host}:{tcp_port}.")
         self._run("List remote devices", build_usbip_list_command(host, tcp_port), listed)
 
+    @defer_background_action
     def refresh_imported_devices(self, after=None):
         if self.is_busy:
             return
         previous = self.port_input.currentData()
-        self._set_imported([])
+        if not self.gate.background:
+            self._set_imported([])
         def listed(output):
             self._set_imported(parse_imported_devices(output))
             self.port_input.setCurrentIndex(max(0, self.port_input.findData(previous)))
@@ -189,6 +203,7 @@ class ClientModeTab(QWidget):
     def _refresh_after_action(self):
         self.refresh_imported_devices(after=self.refresh_remote_devices)
 
+    @defer_background_action
     def attach_selected_device(self):
         if self.is_busy or self._listed_endpoint != self._endpoint():
             return
@@ -199,6 +214,7 @@ class ClientModeTab(QWidget):
         self._run(f"Attach {busid} from {host}", build_usbip_attach_command(host, busid, port),
                   after=self._refresh_after_action)
 
+    @defer_background_action
     def detach_selected_device(self):
         port = self.port_input.currentData()
         if self.is_busy or port is None:
@@ -206,6 +222,7 @@ class ClientModeTab(QWidget):
         self._run(f"Detach virtual port {port}", build_usbip_detach_command(str(port)),
                   after=self._refresh_after_action)
 
+    @defer_background_action
     def detach_all_devices(self):
         if self.is_busy or not self.imported_devices:
             return
@@ -294,7 +311,10 @@ class ClientModeTab(QWidget):
             code = code or -1
         callback, after, failed = self._callback, self._after, self._on_failure
         self.log(record_result(self._label, self._command, code, output, error))
+        if code != 0 and self._label == "List imported devices":
+            self._set_imported([])
         if code != 0 and self._label == "List remote devices":
+            self._invalidate_remote()
             host, port = self._endpoint()
             self.log(f"Unable to list devices from {host}:{port}. Check the host name or IP address. "
                      "For this computer, click Use this PC (127.0.0.1). For another computer, enter its IP address or DNS name. "

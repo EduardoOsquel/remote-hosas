@@ -27,7 +27,7 @@ try:
 except ImportError:  # pragma: no cover
     pygame = None
 
-from operation_gate import OperationGate
+from operation_gate import OperationGate, defer_background_action
 from host_commands import HostWorker
 from management_ui import ManagementTab
 from client_ui import ClientModeTab
@@ -149,6 +149,8 @@ class HostModeTab(QWidget):
         return self._worker is not None
 
     def _update_controls(self):
+        if self.gate.background:
+            return
         idle = not self.is_busy and self.gate.available(self)
         self.list_btn.setEnabled(idle)
         self.device_combo.setEnabled(idle and bool(self.devices))
@@ -211,6 +213,8 @@ class HostModeTab(QWidget):
         self._update_controls()
 
     def _set_devices(self, devices: List[UsbipDevice], empty_text: str = "No USB devices detected") -> None:
+        if self.gate.background and self.devices == devices:
+            return
         previous = self.device_combo.currentData()
         self.devices = devices
         self.device_combo.blockSignals(True)
@@ -236,9 +240,11 @@ class HostModeTab(QWidget):
         self._update_controls()
         self.device_count.setText(f"Local USB devices - {len(devices)} detected")
 
+    @defer_background_action
     def refresh_usbipd_devices(self):
         self.run_command("List USB devices", ["usbipd", "list"])
 
+    @defer_background_action
     def bind_selected_device(self) -> None:
         idx = self.device_combo.currentIndex()
         if idx < 0 or idx >= len(self.devices):
@@ -249,6 +255,7 @@ class HostModeTab(QWidget):
         busid = self.devices[idx].busid
         self.run_command(f"Bind device {busid}", build_usbipd_bind_command(busid), refresh=True)
 
+    @defer_background_action
     def unbind_selected_device(self) -> None:
         idx = self.device_combo.currentIndex()
         if idx < 0 or idx >= len(self.devices):

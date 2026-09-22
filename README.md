@@ -232,3 +232,29 @@ normal window size, maximized state and Host table/log splitter are restored at
 startup. Changes are saved after a short debounce and when closing the window.
 Invalid stored numbers fall back to defaults. Saving preferences does not attach
 or share devices; the normal background read-only refresh still applies.
+
+## First standalone executable
+
+`dist/RemoteHosas.exe` is the Windows x64 single-file build. Python, Qt, pygame
+and the icon assets are bundled. Copy the EXE alone; no application installer is
+required. The USB/IP server/client drivers remain separate prerequisites managed
+from Management. Preferences remain in the Windows user profile.
+
+Build with Python 3.12 x64 in a virtual environment:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.venv\Scripts\python.exe -m PyInstaller --noconfirm RemoteHosas.spec
+```
+
+The console is automatically hidden when launched from Explorer. The embedded
+Management helper preserves redirected output for progress and diagnostics.
+The launcher has `--smoke-test` (loads Qt, application modules and icon, shows a
+brief test window, then exits) and an internal `--installer-helper` entry point.
+No installer or code-signing certificate is included in this build.
+
+Background status checks preserve button enabled states and retain device lists
+while querying. Unchanged results do not rebuild the device widgets. A manual
+action requested during a background query is deferred until it completes; the
+remaining background queries yield to that action. Manual operations retain the
+normal shared operation lock. Tray menu hover uses a contrasting blue highlight.
