@@ -1,6 +1,6 @@
 """Windows USB/IP client: remote exports and locally imported virtual ports."""
 
-from PyQt6.QtCore import QProcess, QTimer
+from PyQt6.QtCore import pyqtSignal, QProcess, QTimer
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
                             QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox, QTextEdit)
 
@@ -13,6 +13,7 @@ from usbip_manager import (USBIP_TCP_PORT, build_usbip_list_command,
 
 
 class ClientModeTab(QWidget):
+    activity = pyqtSignal(str)
     def __init__(self, gate=None):
         super().__init__()
         self.gate = gate or OperationGate()
@@ -95,6 +96,7 @@ class ClientModeTab(QWidget):
         return self._process is not None
 
     def log(self, message):
+        self.activity.emit(message)
         cursor = self.log_widget.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         cursor.insertText(message + "\n")

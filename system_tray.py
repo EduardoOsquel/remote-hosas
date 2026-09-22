@@ -1,6 +1,7 @@
 """Tray lifetime and close choices; hiding never stops background work."""
 
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, QTimer
+from ui_icons import line_icon
 from PyQt6.QtWidgets import QMenu, QMessageBox, QSystemTrayIcon
 
 
@@ -14,13 +15,171 @@ class SystemTray(QObject):
         self.menu = QMenu(window)
         self.show_action = self.menu.addAction("Show application")
         self.show_action.triggered.connect(self.restore)
+        self.tabs_menu = self.menu.addMenu("Open tab")
+        for label, tab in (("Host Mode", window.host_tab), ("Client Mode", window.client_tab),
+                           ("Management", window.management_tab), ("Joystick", window.joystick_tab)):
+            action = self.tabs_menu.addAction(label)
+            action.triggered.connect(lambda checked=False, tab=tab: self.open_tab(tab))
+        self.menu.addSeparator()
+        self.share_menu = self.menu.addMenu("Share device")
+        self.unshare_menu = self.menu.addMenu("Stop sharing")
+        self.connect_menu = self.menu.addMenu("Connect device")
+        self.disconnect_menu = self.menu.addMenu("Disconnect device")
+        self.disconnect_all_action = self.menu.addAction("Disconnect all")
+        self.disconnect_all_action.triggered.connect(self.disconnect_all)
+        self.refresh_action = self.menu.addAction("Refresh devices")
+        self.refresh_action.setIcon(line_icon("refresh"))
+        self.refresh_action.triggered.connect(self.refresh_devices)
+        for menu, icon in ((self.share_menu, "share"), (self.unshare_menu, "disconnect"),
+                           (self.connect_menu, "connect"), (self.disconnect_menu, "disconnect")):
+            menu.setIcon(line_icon(icon))
+        self._refresh_steps = []
+        self._notification_source = None
+        self._update_timer = QTimer(self)
+        self._update_timer.setSingleShot(True)
+        self._update_timer.timeout.connect(self._update)
+        window.operation_gate.changed.connect(lambda: self._update_timer.start(0))
+        window.host_tab.activity.connect(lambda message: self._activity(window.host_tab, message))
+        window.client_tab.activity.connect(lambda message: self._activity(window.client_tab, message))
+        self.menu.aboutToShow.connect(self.rebuild_devices)
         self.menu.addSeparator()
         self.exit_action = self.menu.addAction("Exit application")
         self.exit_action.triggered.connect(window.request_exit)
         self.icon.setContextMenu(self.menu)
         self.icon.activated.connect(self._activated)
+        self.rebuild_devices()
         if self.available():
             self.icon.show()
+
+    def open_tab(self, tab):
+        self.window.centralWidget().setCurrentWidget(tab)
+        self.restore()
+
+    def _idle(self):
+        return (self.window.operation_gate.owner is None
+                and not self.window._shutdown_pending
+                and not self.window._shutdown_ready
+                and not any(tab.is_busy for tab in (self.window.host_tab,
+                           self.window.client_tab, self.window.management_tab)))
+
+    def _update(self):
+        if self._refresh_steps and self._idle():
+            action = self._refresh_steps.pop(0)
+            action()
+            self._update_timer.start(0)
+        self.rebuild_devices()
+
+    @staticmethod
+    def _placeholder(menu, text):
+        menu.addAction(text).setEnabled(False)
+
+    @staticmethod
+    def _device_action(menu, label, callback):
+        action = menu.addAction(label.replace("&", "&&"))
+        action.triggered.connect(lambda checked=False: callback())
+
+    def rebuild_devices(self):
+        host, client = self.window.host_tab, self.window.client_tab
+        idle = self._idle() and not self._refresh_steps
+        for menu in (self.share_menu, self.unshare_menu, self.connect_menu, self.disconnect_menu):
+            menu.clear()
+        if not idle:
+            for menu in (self.share_menu, self.unshare_menu, self.connect_menu, self.disconnect_menu):
+                self._placeholder(menu, "Loading?" if self._refresh_steps else "An operation is in progress?")
+        else:
+            for device in host.devices:
+                if device.state == "Not shared":
+                    menu, share = self.share_menu, True
+                elif device.state in {"Shared", "Shared (forced)", "Attached"}:
+                    menu, share = self.unshare_menu, False
+                else:
+                    continue
+                self._device_action(menu, f"{device.name} ? {device.busid}",
+                    lambda busid=device.busid, share=share: self.share_device(busid, share))
+            endpoint = client._endpoint()
+            if not endpoint[0]:
+                self._device_action(self.connect_menu, "Configure remote host?",
+                                    lambda: self.open_tab(client))
+            elif client._listed_endpoint != endpoint:
+                self._device_action(self.connect_menu, "List remote devices?", self.refresh_devices)
+            else:
+                self._placeholder(self.connect_menu, f"Host: {endpoint[0]}:{endpoint[1]}")
+                for device in client.devices:
+                    self._device_action(self.connect_menu, f"{device.name} ? {device.busid}",
+                        lambda busid=device.busid, endpoint=endpoint: self.connect_device(busid, endpoint))
+                if not client.devices:
+                    self._placeholder(self.connect_menu, "No devices available")
+            for device in client.imported_devices:
+                self._device_action(self.disconnect_menu,
+                    f"{device.name} ? Port {device.port} ? {device.location}",
+                    lambda port=device.port, location=device.location: self.disconnect_device(port, location))
+            for menu in (self.share_menu, self.unshare_menu, self.disconnect_menu):
+                if not menu.actions():
+                    self._placeholder(menu, "No devices available")
+        self.disconnect_all_action.setEnabled(idle and bool(client.imported_devices))
+        self.refresh_action.setEnabled(idle)
+
+    def _invoke(self, source, action):
+        if not self._idle() or self._refresh_steps:
+            return
+        self._notification_source = source
+        action()
+        self._update_timer.start(0)
+
+    def _activity(self, source, message):
+        if source is self._notification_source and message.startswith(("[OK]", "[ERROR]")):
+            self._notification_source = None
+            error = message.startswith("[ERROR]")
+            self.icon.showMessage("USB/IP + Joystick Bridge", message,
+                QSystemTrayIcon.MessageIcon.Warning if error else QSystemTrayIcon.MessageIcon.Information)
+        self._update_timer.start(0)
+
+    def share_device(self, busid, share):
+        host = self.window.host_tab
+        expected = {"Not shared"} if share else {"Shared", "Shared (forced)", "Attached"}
+        if not any(d.busid == busid and d.state in expected for d in host.devices):
+            return
+        def action():
+            host.device_combo.setCurrentIndex(host.device_combo.findData(busid))
+            (host.bind_selected_device if share else host.unbind_selected_device)()
+        self._invoke(host, action)
+
+    def connect_device(self, busid, endpoint):
+        client = self.window.client_tab
+        if endpoint != client._endpoint() or endpoint != client._listed_endpoint:
+            return
+        index = client.device_combo.findData(busid)
+        if index < 0:
+            return
+        def action():
+            client.device_combo.setCurrentIndex(index)
+            client.attach_selected_device()
+        self._invoke(client, action)
+
+    def disconnect_device(self, port, location):
+        client = self.window.client_tab
+        if not any(d.port == port and d.location == location for d in client.imported_devices):
+            return
+        def action():
+            client.port_input.setCurrentIndex(client.port_input.findData(port))
+            client.detach_selected_device()
+        self._invoke(client, action)
+
+    def disconnect_all(self):
+        client = self.window.client_tab
+        if client.imported_devices:
+            self._invoke(client, client.detach_all_devices)
+
+    def refresh_devices(self):
+        if not self._idle() or self._refresh_steps:
+            return
+        client = self.window.client_tab
+        self._refresh_steps = [self.window.host_tab.refresh_usbipd_devices,
+                               client.refresh_imported_devices]
+        if client._endpoint()[0]:
+            self._refresh_steps.append(client.refresh_remote_devices)
+        self._update_timer.start(0)
+        self.rebuild_devices()
 
     def available(self):
         return QSystemTrayIcon.isSystemTrayAvailable()

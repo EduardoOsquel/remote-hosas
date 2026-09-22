@@ -2,7 +2,7 @@ import subprocess
 import sys
 from typing import List, Optional
 
-from PyQt6.QtCore import QEvent, Qt, QTimer
+from PyQt6.QtCore import pyqtSignal, QEvent, Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -46,6 +46,7 @@ from usbip_manager import (
 
 
 class HostModeTab(QWidget):
+    activity = pyqtSignal(str)
     def __init__(self, gate=None) -> None:
         super().__init__()
         self.gate = gate or OperationGate()
@@ -133,6 +134,7 @@ class HostModeTab(QWidget):
     _make_button = staticmethod(make_button)
 
     def log(self, message: str) -> None:
+        self.activity.emit(message)
         self._log_buffer.append(message)
         if len(self._log_buffer) > 250:
             self._log_buffer = self._log_buffer[-250:]

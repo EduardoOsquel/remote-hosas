@@ -189,3 +189,21 @@ A shared operation gate serializes Host, Client and Management commands. Control
 in other tabs are disabled while a command runs, and command entry points also
 reject conflicting requests. Host retains the gate through its post-action refresh.
 Sending the window to the system tray remains available during operations.
+
+## System tray device menu
+
+The tray offers Open tab shortcuts for Host Mode, Client Mode, Management and
+Joystick. Share device lists unshared local devices; Stop sharing lists shared,
+forced-shared and attached local devices. Connect device uses the host and TCP
+port configured in Client Mode; without a host it opens configuration instead.
+Disconnect device lists imported devices with their virtual ports and source
+locations. Disconnect all is enabled only when imported devices are detected.
+
+Refresh devices queries Host, local imports and the configured remote host in
+sequence without blocking the interface. Menus use the latest queried lists;
+use Refresh devices to discover changes made outside this application. No remote
+host is contacted merely by opening the tray menu. Actions reuse the tab commands,
+including administrator approval, operation locking and post-action refreshes.
+Tray actions report command outcomes through Windows notifications and retain
+activity in the corresponding tab log. Windows notification settings may suppress
+these notifications.
