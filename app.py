@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover
 from management_ui import ManagementTab
 from client_ui import ClientModeTab
 from command_log import record_exception, record_result
-from ui_theme import APP_STYLESHEET, make_button, setup_page
+from ui_theme import APP_STYLESHEET, DeviceStateDelegate, make_button, setup_page
 from app_icon import application_icon, set_windows_app_id
 from system_tray import SystemTray
 
@@ -65,6 +65,7 @@ class HostModeTab(QWidget):
 
         self.device_table = QTableWidget(0, 4)
         self.device_table.setHorizontalHeaderLabels(["BUSID", "VID:PID", "DEVICE", "STATE"])
+        self.device_table.setItemDelegateForColumn(3, DeviceStateDelegate(self.device_table))
         self.device_table.verticalHeader().setVisible(False)
         self.device_table.setAlternatingRowColors(True)
         self.device_table.setSelectionBehavior(self.device_table.SelectionBehavior.SelectRows)

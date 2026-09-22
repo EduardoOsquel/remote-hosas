@@ -1,9 +1,41 @@
 """Shared visual style and layout defaults for the main application."""
 
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtWidgets import QPushButton, QSizePolicy, QVBoxLayout
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import (QApplication, QPushButton, QSizePolicy, QVBoxLayout,
+                            QStyledItemDelegate, QStyleOptionViewItem, QStyle)
 
 from ui_icons import line_icon
+
+
+class DeviceStateDelegate(QStyledItemDelegate):
+    """Keep semantic state colors readable even on a selected row."""
+
+    COLORS = {"Shared": "#89dcc3", "Shared (forced)": "#89dcc3", "Attached": "#8bddf2"}
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        option.displayAlignment = Qt.AlignmentFlag.AlignCenter
+
+    def paint(self, painter, option, index):
+        color = self.COLORS.get(index.data())
+        if color is None:
+            super().paint(painter, option, index)
+            return
+        styled = QStyleOptionViewItem(option)
+        self.initStyleOption(styled, index)
+        text = styled.text
+        styled.text = ""
+        style = styled.widget.style() if styled.widget else QApplication.style()
+        painter.save()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, styled, painter, styled.widget)
+        painter.setFont(styled.font)
+        painter.setPen(QColor(color))
+        rect = styled.rect.adjusted(10, 0, -10, 0)
+        painter.setClipRect(styled.rect)
+        text = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, rect.width())
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+        painter.restore()
 
 
 def setup_page(layout: QVBoxLayout) -> None:
