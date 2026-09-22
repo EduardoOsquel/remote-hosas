@@ -95,7 +95,7 @@ class HostModeTab(QWidget):
         self.list_btn.clicked.connect(self.refresh_usbipd_devices)
         self.bind_btn = self._make_button("Bind / Share", "share")
         self.bind_btn.clicked.connect(self.bind_selected_device)
-        self.unbind_btn = self._make_button("Unbind / Stop sharing", "disconnect")
+        self.unbind_btn = self._make_button("Unbind / Stop Sharing", "disconnect")
         self.unbind_btn.clicked.connect(self.unbind_selected_device)
         actions.addWidget(self.list_btn)
         actions.addWidget(self.bind_btn)
