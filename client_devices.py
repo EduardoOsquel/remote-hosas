@@ -90,6 +90,10 @@ class ClientDevices:
                 location = imported_endpoint(local.location) if local else None
                 busid = remote.busid if remote else (location[2] if location else "-")
                 for col, value in enumerate((name, "Connected" if local else "Not connected", busid)):
+                    existing = table.item(i, col)
+                    tooltip = value + ("\nSource: " + local.location if local else "")
+                    if existing is not None and existing.text() == value and existing.toolTip() == tooltip:
+                        continue
                     item = QTableWidgetItem(value)
                     item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter if col == 0 else Qt.AlignmentFlag.AlignCenter)
                     item.setToolTip(value + ("\nSource: " + local.location if local else ""))
@@ -109,6 +113,11 @@ class ClientDevices:
         if self._building_table:
             return
         if not self.device_table.selectedItems():
+            if self._selected_connection is None:
+                self.device_combo.setCurrentIndex(-1)
+                self.port_input.setCurrentIndex(-1)
+                self.remote_details.setText("List remote devices to see the selected host's devices.")
+                self._update_controls()
             return
         self._selected_connection = None
         self.connected_table.blockSignals(True)
@@ -137,6 +146,9 @@ class ClientDevices:
             endpoint = imported_endpoint(device.location)
             source = f"{endpoint[0]}:{endpoint[1]}" if endpoint else device.location
             for col, text in enumerate((device.name, source, endpoint[2] if endpoint else "-")):
+                existing = table.item(i, col)
+                if existing is not None and existing.text() == text and existing.toolTip() == device.location:
+                    continue
                 item = QTableWidgetItem(text)
                 item.setToolTip(device.location)
                 if col == 0:

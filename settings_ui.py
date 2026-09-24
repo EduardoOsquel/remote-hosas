@@ -121,7 +121,7 @@ class SettingsTab(QWidget):
         import ipaddress
         try:
             address = ipaddress.ip_address(host.strip())
-            if address.version != 4 or address.is_unspecified or address.is_multicast:
+            if address.version != 4 or address.is_unspecified or address.is_multicast or address.is_loopback:
                 return
             ip = str(address)
             saved = authorized_addresses(str(self.settings.value("metadata/allowed", "")))

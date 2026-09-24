@@ -30,7 +30,7 @@ def client():
 
 
 def simulate(widget, output):
-    def run(label, command, callback=None, after=None):
+    def run(label, command, callback=None, after=None, on_failure=None):
         if callback:
             callback(output)
         widget._update_controls()
@@ -185,7 +185,7 @@ def test_refresh_after_action_checks_local_ports_then_remote_exports(client):
     _, widget = client
     widget.host_input.setText("host-pc")
     commands = []
-    def run(label, command, callback=None, after=None):
+    def run(label, command, callback=None, after=None, on_failure=None):
         commands.append(command)
         if callback:
             callback(IMPORTED if command == ["usbip", "port"] else REMOTE)
@@ -324,3 +324,19 @@ def test_windows_names_only_enrich_matching_local_endpoint(client):
     assert widget.prefer_local_device_names("localhost", 4321, remote)[0].name == "Foxlink"
     remote[0].vid_pid = "1234:5678"
     assert widget.prefer_local_device_names("localhost", 3240, remote)[0].name == "Foxlink"
+
+
+def test_manual_remote_refresh_keeps_rows_and_details_until_results(client):
+    _, widget = client
+    widget.host_input.setText("host-pc")
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    item = widget.device_table.item(0, 0)
+    before = widget.remote_details.text()
+    with patch.object(widget, "_run") as run:
+        widget.refresh_remote_devices()
+    assert widget.device_table.item(0, 0) is item
+    assert widget.remote_details.text() == before
+    run.call_args.args[2](REMOTE)
+    assert widget.device_table.item(0, 0) is item
+    assert widget.remote_details.text() == before

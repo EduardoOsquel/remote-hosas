@@ -28,6 +28,7 @@ class ClientModeTab(ClientDevices, QWidget):
         self.metadata_client = MetadataClient(self)
         self.metadata_settings = None
         self.local_devices = local_devices or (lambda: [])
+        self._remote_generation = 0
         self.devices = []
         self.imported_devices = []
         self._listed_endpoint = None
@@ -197,6 +198,7 @@ class ClientModeTab(ClientDevices, QWidget):
         self.metadata_client.cancel()
 
     def _invalidate_remote(self):
+        self._remote_generation += 1
         self.cancel_metadata()
         self.devices = []
         self._listed_endpoint = None
@@ -243,16 +245,26 @@ class ClientModeTab(ClientDevices, QWidget):
             return
         manual = not self.gate.background
         previous = self.device_combo.currentData()
-        if not self.gate.background:
-            self._invalidate_remote()
+        self.cancel_metadata()
+        self._remote_generation += 1
+        generation = self._remote_generation
+        def failed():
+            if generation == self._remote_generation and (host, tcp_port) == self._endpoint():
+                self._invalidate_remote()
         def listed(output):
-            if (host, tcp_port) != self._endpoint():
+            if generation != self._remote_generation or (host, tcp_port) != self._endpoint():
                 return
             devices = self.prefer_local_device_names(host, tcp_port, parse_remote_devices(output))
-            if self.gate.background and devices == self.devices and self._listed_endpoint == (host, tcp_port):
+            if devices == self.devices and self._listed_endpoint == (host, tcp_port):
+                if manual:
+                    self.log(f"Detected {len(devices)} exportable USB device(s) on {host}:{tcp_port}.")
+                    if devices:
+                        self.host_discovered.emit(host)
+                self.retrieve_metadata(host, tcp_port)
                 return
             self.devices = devices
             self._listed_endpoint = (host, tcp_port)
+            self.device_combo.blockSignals(True)
             self.device_combo.clear()
             for device in self.devices:
                 self.device_combo.addItem(line_icon(device_icon_kind(device.name)), f"{device.busid} - {device.name}", device.busid)
@@ -260,12 +272,14 @@ class ClientModeTab(ClientDevices, QWidget):
                 self.device_combo.addItem("No exportable devices on this host")
             else:
                 self.device_combo.setCurrentIndex(max(0, self.device_combo.findData(previous)))
+            self.device_combo.blockSignals(False)
             self.rebuild_device_table()
             self.log(f"Detected {len(self.devices)} exportable USB device(s) on {host}:{tcp_port}.")
             self.retrieve_metadata(host, tcp_port)
             if manual and devices:
                 self.host_discovered.emit(host)
-        self._run("List remote devices", build_usbip_list_command(host, tcp_port), listed)
+        self._run("List remote devices", build_usbip_list_command(host, tcp_port), listed,
+                  on_failure=failed)
 
     def retrieve_metadata(self, host, tcp_port):
         settings = self.metadata_settings
@@ -444,8 +458,8 @@ class ClientModeTab(ClientDevices, QWidget):
         if code != 0 and self._label == "List imported devices":
             self._set_imported([])
         if code != 0 and self._label == "List remote devices":
-            self._invalidate_remote()
-            host, port = self._endpoint()
+            host = self._command[-1]
+            port = next((part.split("=", 1)[1] for part in self._command if part.startswith("--tcp-port=")), "3240")
             self.log(f"Unable to list devices from {host}:{port}. Check the host name or IP address. "
                      "For this computer, enter 127.0.0.1. For another computer, enter its IP address or DNS name. "
                      "Also check that its USB/IP service is running and reachable.")
