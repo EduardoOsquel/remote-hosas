@@ -127,3 +127,57 @@ def test_settings_log_explains_only_enabled_retrieval(tmp_path):
     assert widget.activity_panel.editor.isHidden()
     service.stop()
     widget.deleteLater()
+
+
+@pytest.mark.parametrize("size", [(1100, 800), (1500, 900)])
+def test_settings_advanced_geometry_stays_stable_when_log_toggles(tmp_path, size):
+    from PyQt6.QtWidgets import QGroupBox, QLabel
+    from ui_theme import APP_STYLESHEET
+    app = QApplication.instance() or QApplication([])
+    settings = QSettings(str(tmp_path / "layout.ini"), QSettings.Format.IniFormat)
+    service = MetadataService(lambda: [])
+    widget = SettingsTab(settings, service)
+    widget.setStyleSheet(APP_STYLESHEET)
+    widget.resize(*size)
+    widget.show()
+    for _ in range(3):
+        app.processEvents()
+    advanced = widget.findChild(QGroupBox)
+    warning = next(label for label in advanced.findChildren(QLabel) if label.text().startswith("Access is restricted"))
+    controls = [advanced, widget.port.parentWidget(), widget.port, widget.allowed, warning]
+    before = [control.geometry() for control in controls]
+    for _ in range(6):
+        widget.activity_panel.toggle.click()
+        for _ in range(3):
+            app.processEvents()
+        assert [control.geometry() for control in controls] == before
+    assert advanced.height() - warning.geometry().bottom() <= 20
+    widget.close()
+    widget.deleteLater()
+    service.stop()
+
+
+def test_discovered_ip_requires_consent_and_saves_only_access(tmp_path):
+    from PyQt6.QtWidgets import QMessageBox
+    app = QApplication.instance() or QApplication([])
+    settings = QSettings(str(tmp_path / "consent.ini"), QSettings.Format.IniFormat)
+    service = MetadataService(lambda: [])
+    widget = SettingsTab(settings, service)
+    widget.share.setChecked(True)  # Unapplied draft must stay unapplied.
+    widget.offer_host_access("192.168.1.20")
+    assert widget._access_dialog is not None
+    assert not settings.contains("metadata/allowed")
+    widget._access_dialog.done(QMessageBox.StandardButton.Yes)
+    assert "192.168.1.20" in widget.allowed.toPlainText()
+    assert service.allowed == {"192.168.1.20"}
+    assert not service.server.isListening()
+    assert not settings.contains("metadata/share")
+    widget.offer_host_access("192.168.1.20")
+    assert widget._access_dialog is None
+    widget.offer_host_access("192.168.1.21")
+    widget._access_dialog.done(QMessageBox.StandardButton.No)
+    assert "192.168.1.21" not in settings.value("metadata/allowed")
+    widget.offer_host_access("192.168.1.21")
+    assert widget._access_dialog is None
+    service.stop()
+    widget.deleteLater()

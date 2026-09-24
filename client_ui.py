@@ -21,6 +21,7 @@ from device_metadata import MetadataClient, merge_names
 
 class ClientModeTab(ClientDevices, QWidget):
     activity = pyqtSignal(str)
+    host_discovered = pyqtSignal(str)
     def __init__(self, gate=None, local_devices=None):
         super().__init__()
         self.gate = gate or OperationGate()
@@ -240,6 +241,7 @@ class ClientModeTab(ClientDevices, QWidget):
         host, tcp_port = self._endpoint()
         if not host:
             return
+        manual = not self.gate.background
         previous = self.device_combo.currentData()
         if not self.gate.background:
             self._invalidate_remote()
@@ -261,6 +263,8 @@ class ClientModeTab(ClientDevices, QWidget):
             self.rebuild_device_table()
             self.log(f"Detected {len(self.devices)} exportable USB device(s) on {host}:{tcp_port}.")
             self.retrieve_metadata(host, tcp_port)
+            if manual and devices:
+                self.host_discovered.emit(host)
         self._run("List remote devices", build_usbip_list_command(host, tcp_port), listed)
 
     def retrieve_metadata(self, host, tcp_port):

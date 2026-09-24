@@ -523,6 +523,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         tabs.addTab(self.settings_tab, line_icon("settings"), "Settings")
         self.client_tab.metadata_settings = self._settings
         self.settings_tab.applied.connect(self.client_tab.cancel_metadata)
+        self.client_tab.host_discovered.connect(self.settings_tab.offer_host_access)
         QApplication.instance().aboutToQuit.connect(self.metadata_service.stop)
         self.destroyed.connect(self.metadata_service.stop)
         self.setCentralWidget(tabs)
