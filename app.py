@@ -509,7 +509,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.host_tab = HostModeTab(self.operation_gate)
         tabs.setIconSize(QSize(18, 18))
         tabs.addTab(self.host_tab, line_icon("share"), "Host Mode")
-        self.client_tab = ClientModeTab(self.operation_gate)
+        self.client_tab = ClientModeTab(self.operation_gate, local_devices=lambda: self.host_tab.devices)
         tabs.addTab(self.client_tab, line_icon("connect"), "Client Mode")
         self.management_tab = ManagementTab(self.operation_gate)
         tabs.addTab(self.management_tab, line_icon("settings"), "Management")
@@ -547,7 +547,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self._about_dialog.activateWindow()
 
     def _restore_preferences(self):
-        host = self._settings.value("client/host", "")
+        host = self._settings.value("client/host", "127.0.0.1")
         self.client_tab.host_input.setText(host if isinstance(host, str) else "")
         def integer(key, default, low, high):
             try:

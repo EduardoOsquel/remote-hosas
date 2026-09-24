@@ -62,7 +62,7 @@ def test_client_details_do_not_overlap_actions_at_small_size():
     application.processEvents()
     from PyQt6.QtCore import QPoint
     detail_bottom = widget.remote_details.mapTo(widget, QPoint(0, widget.remote_details.height())).y()
-    action_top = widget.list_btn.mapTo(widget, QPoint(0, 0)).y()
+    action_top = widget.attach_btn.mapTo(widget, QPoint(0, 0)).y()
     assert action_top > detail_bottom
     assert widget.findChild(QScrollArea).verticalScrollBar().maximum() > 0
     widget.close()

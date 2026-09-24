@@ -11,7 +11,7 @@ from ui_icons import line_icon
 class DeviceStateDelegate(QStyledItemDelegate):
     """Keep semantic state colors readable even on a selected row."""
 
-    COLORS = {"Shared": "#89dcc3", "Shared (forced)": "#89dcc3", "Attached": "#8bddf2"}
+    COLORS = {"Connected": "#89dcc3", "Shared": "#89dcc3", "Shared (forced)": "#89dcc3", "Attached": "#8bddf2"}
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)

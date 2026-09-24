@@ -205,3 +205,7 @@ still retained for export.
 Host headers and cells align device names left and state/BUSID centrally. Client content scrolls vertically on smaller windows to preserve space between details and actions.
 
 Host uses a fixed five-row table without a splitter. Expanding activity adds a bounded log below the device controls without resizing the table. Client detail cards fit their content and use compact margins.
+
+Client Mode uses one five-row device table (Device, State, BUSID), with shared details and connection actions below. Connected means imported on this PC. Matching uses the reported host, TCP port and BUSID; different DNS aliases for the same host may appear separately. Imports from other hosts remain visible for disconnection.
+
+Client defaults to 127.0.0.1 only when no host preference exists. Automatic remote checks start when Client Mode is visible. List remote devices sits beside the host address. Connected devices from all hosts remain in a separate table when the remote address changes. Selection is exclusive between the remote and connected tables. Actions are ordered Refresh connections, Connect, Disconnect, Disconnect all.

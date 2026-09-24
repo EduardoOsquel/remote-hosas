@@ -22,6 +22,7 @@ def window():
             patch("system_tray.QSystemTrayIcon.hide"), \
             patch.object(application, "quit") as quit_app:
         widget = UsbipJoystickBridgeApp()
+        widget.client_tab.host_input.clear()  # Keep tray tests independent of real network queries.
         widget.show()
         application.processEvents()
         with patch.object(widget.client_tab, "disconnect_before_exit", side_effect=lambda done: done(True)):
@@ -471,3 +472,14 @@ def test_native_context_cancel_does_not_trigger_action(window):
     with patch.object(widget.tray._native_menu, "show", return_value=None):
         widget.tray._show_native_menu()
     quit_app.assert_not_called()
+
+
+def test_first_run_host_default_preserves_saved_preference(window):
+    _, widget, _ = window
+    widget._settings.remove("client/host")
+    widget._restore_preferences()
+    assert widget.client_tab.host_input.text() == "127.0.0.1"
+    widget._settings.setValue("client/host", "saved-host")
+    widget._restore_preferences()
+    assert widget.client_tab.host_input.text() == "saved-host"
+    widget.client_tab.host_input.clear()

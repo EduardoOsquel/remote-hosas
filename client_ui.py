@@ -15,11 +15,15 @@ from usbip_manager import (USBIP_TCP_PORT, build_usbip_list_command,
     parse_imported_devices, resolve_usbip_client, build_usbip_detach_all_command)
 
 
-class ClientModeTab(QWidget):
+from client_devices import ClientDevices
+
+
+class ClientModeTab(ClientDevices, QWidget):
     activity = pyqtSignal(str)
-    def __init__(self, gate=None):
+    def __init__(self, gate=None, local_devices=None):
         super().__init__()
         self.gate = gate or OperationGate()
+        self.local_devices = local_devices or (lambda: [])
         self.devices = []
         self.imported_devices = []
         self._listed_endpoint = None
@@ -52,19 +56,17 @@ class ClientModeTab(QWidget):
         self.tcp_port_input.setValue(USBIP_TCP_PORT)
         self.tcp_port_input.setToolTip("usbipd-win listens on TCP 3240. Change only for an explicitly configured port forward.")
         host_row = QHBoxLayout()
+        host_row.setSpacing(12)
         host_row.addWidget(self.host_input, 1)
-        self.local_host_btn = make_button("Use this PC", "connect")
-        self.local_host_btn.setToolTip("List devices shared by usbipd-win on this PC using 127.0.0.1 and TCP 3240.")
-        self.local_host_btn.clicked.connect(self.use_local_host)
-        host_row.addWidget(self.local_host_btn)
         form.addRow("Remote host", host_row)
         form.addRow("Server TCP port", self.tcp_port_input)
         self.device_combo = QComboBox()
         self.device_combo.setMinimumContentsLength(24)
         self.device_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        form.addRow("Exportable USB device", self.device_combo)
+        self.device_combo.setParent(self)
+        self.device_combo.hide()
         self.remote_details = details_label(compact=True)
-        form.addRow(self.remote_details)
+
         self.device_combo.currentIndexChanged.connect(self._show_remote_details)
         actions = QHBoxLayout()
         self.list_btn = make_button("List remote devices", "refresh")
@@ -72,14 +74,19 @@ class ClientModeTab(QWidget):
         self.attach_btn = make_button("Connect", "connect")
         self.attach_btn.setProperty("primary", True)
         self.attach_btn.clicked.connect(self.attach_selected_device)
-        actions.addWidget(self.list_btn)
+        host_row.addWidget(self.list_btn)
         actions.addWidget(self.attach_btn)
         actions.addStretch()
         action_panel = QWidget()
         action_panel.setLayout(actions)
         actions.setContentsMargins(0, 4, 0, 0)
-        form.addRow(action_panel)
+
         root.addWidget(remote)
+        root.addWidget(self.setup_device_table())
+        root.addWidget(QLabel("Connected devices - all hosts"))
+        root.addWidget(self.connected_table)
+        root.addWidget(self.remote_details)
+        root.addWidget(action_panel)
 
         local = QGroupBox("Imported devices on this PC")
         local.setStyleSheet("QGroupBox { padding: 0px; }")
@@ -109,7 +116,11 @@ class ClientModeTab(QWidget):
         local_actions.addWidget(self.detach_all_btn)
         local_actions.addStretch()
         local_layout.addLayout(local_actions)
-        root.addWidget(local)
+        local.setParent(self)
+        local.hide()
+        actions.insertWidget(0, self.refresh_imported_btn)
+        actions.insertWidget(2, self.detach_btn)
+        actions.insertWidget(3, self.detach_all_btn)
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
         self.log_widget.document().setMaximumBlockCount(300)
@@ -122,6 +133,26 @@ class ClientModeTab(QWidget):
         self._invalidate_remote()
         self._set_imported([])
         self.gate.changed.connect(self._update_controls)
+
+    def prefer_local_device_names(self, host, port, devices):
+        """Use Windows names only for a verified local standard-service endpoint."""
+        from ipaddress import ip_address
+        from dataclasses import replace
+        try:
+            local = ip_address(host.strip().strip("[]")).is_loopback
+        except ValueError:
+            local = host.strip().casefold().rstrip(".") == "localhost"
+        if not local or port != USBIP_TCP_PORT:
+            return devices
+        known = {device.busid: device for device in self.local_devices()}
+        result = []
+        for device in devices:
+            candidate = known.get(device.busid)
+            if (candidate and candidate.name and device.vid_pid and
+                    candidate.vid_pid.casefold() == device.vid_pid.casefold()):
+                device = replace(device, name=candidate.name)
+            result.append(device)
+        return result
 
     def _show_remote_details(self):
         busid = self.device_combo.currentData()
@@ -155,14 +186,6 @@ class ClientModeTab(QWidget):
         self.log_widget.setTextCursor(cursor)
         self.log_widget.ensureCursorVisible()
 
-    @defer_background_action
-    def use_local_host(self):
-        if self.is_busy or not self.gate.available(self):
-            return
-        self.host_input.setText("127.0.0.1")
-        self.tcp_port_input.setValue(USBIP_TCP_PORT)
-        self.refresh_remote_devices()
-
     def _endpoint(self):
         return self.host_input.text().strip(), self.tcp_port_input.value()
 
@@ -171,6 +194,7 @@ class ClientModeTab(QWidget):
         self._listed_endpoint = None
         self.device_combo.clear()
         self.device_combo.addItem("List remote devices to select one")
+        self.rebuild_device_table()
         self._update_controls()
 
     def _update_controls(self):
@@ -178,14 +202,13 @@ class ClientModeTab(QWidget):
             return
         idle = not self.is_busy and self.gate.available(self)
         self.host_input.setEnabled(idle)
-        self.local_host_btn.setEnabled(idle)
         self.tcp_port_input.setEnabled(idle)
         self.list_btn.setEnabled(idle and bool(self.host_input.text().strip()))
         self.device_combo.setEnabled(idle and bool(self.devices))
-        self.attach_btn.setEnabled(idle and bool(self.devices) and self._listed_endpoint == self._endpoint())
+        self.attach_btn.setEnabled(idle and self.device_combo.currentData() is not None and self.port_input.currentData() is None and self._listed_endpoint == self._endpoint())
         self.refresh_imported_btn.setEnabled(idle)
         self.port_input.setEnabled(idle and bool(self.imported_devices))
-        self.detach_btn.setEnabled(idle and bool(self.imported_devices))
+        self.detach_btn.setEnabled(idle and self.port_input.currentData() is not None)
         self.detach_all_btn.setEnabled(idle and bool(self.imported_devices))
 
     def _set_imported(self, devices):
@@ -200,6 +223,7 @@ class ClientModeTab(QWidget):
             self.port_input.addItem("No imported devices detected")
         else:
             self.port_input.setCurrentIndex(max(0, self.port_input.findData(previous)))
+        self.rebuild_device_table()
         self._update_controls()
 
     @defer_background_action
@@ -215,7 +239,7 @@ class ClientModeTab(QWidget):
         def listed(output):
             if (host, tcp_port) != self._endpoint():
                 return
-            devices = parse_remote_devices(output)
+            devices = self.prefer_local_device_names(host, tcp_port, parse_remote_devices(output))
             if self.gate.background and devices == self.devices and self._listed_endpoint == (host, tcp_port):
                 return
             self.devices = devices
@@ -227,6 +251,7 @@ class ClientModeTab(QWidget):
                 self.device_combo.addItem("No exportable devices on this host")
             else:
                 self.device_combo.setCurrentIndex(max(0, self.device_combo.findData(previous)))
+            self.rebuild_device_table()
             self.log(f"Detected {len(self.devices)} exportable USB device(s) on {host}:{tcp_port}.")
         self._run("List remote devices", build_usbip_list_command(host, tcp_port), listed)
 
@@ -235,11 +260,8 @@ class ClientModeTab(QWidget):
         if self.is_busy:
             return
         previous = self.port_input.currentData()
-        if not self.gate.background:
-            self._set_imported([])
         def listed(output):
             self._set_imported(parse_imported_devices(output))
-            self.port_input.setCurrentIndex(max(0, self.port_input.findData(previous)))
         self._run("List imported devices", ["usbip", "port"],
                   listed, after)
 
@@ -389,7 +411,7 @@ class ClientModeTab(QWidget):
             self._invalidate_remote()
             host, port = self._endpoint()
             self.log(f"Unable to list devices from {host}:{port}. Check the host name or IP address. "
-                     "For this computer, click Use this PC (127.0.0.1). For another computer, enter its IP address or DNS name. "
+                     "For this computer, enter 127.0.0.1. For another computer, enter its IP address or DNS name. "
                      "Also check that its USB/IP service is running and reachable.")
             if host.lower() == "locahost":
                 self.log("Did you mean localhost? The entered name is locahost (missing the second l).")

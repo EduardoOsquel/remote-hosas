@@ -198,32 +198,6 @@ def test_refresh_after_action_checks_local_ports_then_remote_exports(client):
     assert widget.device_combo.currentData() == "1-3"
 
 
-def test_use_this_pc_corrects_endpoint_and_lists_devices(client):
-    _, widget = client
-    widget.host_input.setText("locahost")
-    widget.tcp_port_input.setValue(4321)
-    with simulate(widget, REMOTE) as run:
-        widget.local_host_btn.click()
-    assert widget.host_input.text() == "127.0.0.1"
-    assert widget.tcp_port_input.value() == 3240
-    assert run.call_args.args[1] == ["usbip", "--tcp-port=3240", "list", "-r", "127.0.0.1"]
-    assert widget.devices[0].busid == "1-3"
-    assert widget.attach_btn.isEnabled()
-
-
-def test_local_host_shortcut_respects_management_lock(client):
-    _, widget = client
-    owner = object()
-    widget.gate.acquire(owner)
-    assert not widget.local_host_btn.isEnabled()
-    with patch.object(widget, "_run") as run:
-        widget.use_local_host()
-        run.assert_not_called()
-    assert widget.host_input.text() == ""
-    widget.gate.release(owner)
-
-
-
 def test_shutdown_command_reports_lock_conflict(client):
     _, widget = client
     owner = object()
@@ -291,3 +265,62 @@ def test_remote_name_is_clean_and_identifiers_appear_in_details(client):
     assert widget.device_combo.currentData() == "2-3"
     assert "VID:PID: 05c8:0b10" in widget.remote_details.text()
     assert "unknown product" not in widget.remote_details.text()
+
+
+def test_table_matches_connection_by_endpoint_and_busid(client):
+    from usbip_manager import ImportedDevice
+    _, widget = client
+    widget.host_input.setText("host-pc")
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    assert widget.device_table.item(0, 1).text() == "Not connected"
+    widget._set_imported([ImportedDevice(7, "Stick", "other-host:3240/1-3")])
+    assert widget.device_table.rowCount() == 1
+    assert widget.connected_table.rowCount() == 1
+    assert widget.device_table.item(0, 1).text() == "Not connected"
+    widget._set_imported([ImportedDevice(7, "Stick", "host-pc:3240/1-3")])
+    assert widget.device_table.rowCount() == 1
+    assert widget.device_table.item(0, 1).text() == "Connected"
+    assert not widget.attach_btn.isEnabled()
+    assert widget.detach_btn.isEnabled()
+    with patch.object(widget, "_run") as run:
+        widget.detach_selected_device()
+    assert run.call_args.args[1] == ["usbip", "detach", "-p", "7"]
+
+
+def test_connections_survive_host_change_and_selection_is_exclusive(client):
+    from usbip_manager import ImportedDevice
+    _, widget = client
+    widget.host_input.setText("host-pc")
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    widget._set_imported([ImportedDevice(7, "Stick", "host-pc:3240/1-3")])
+    widget.connected_table.selectRow(0)
+    assert not widget.device_table.selectedItems()
+    assert widget.detach_btn.isEnabled()
+    assert not widget.attach_btn.isEnabled()
+    widget.host_input.setText("another-host")
+    assert widget.connected_table.rowCount() == 1
+    assert widget.port_input.currentData() == 7
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    widget.device_table.selectRow(0)
+    assert not widget.connected_table.selectedItems()
+    assert widget.attach_btn.isEnabled()
+    assert not widget.detach_btn.isEnabled()
+
+
+def test_windows_names_only_enrich_matching_local_endpoint(client):
+    from usbip_manager import UsbipDevice
+    _, widget = client
+    widget.local_devices = lambda: [UsbipDevice("2-3", "HP True Vision HD Camera", "05c8:0b10")]
+    remote = [UsbipDevice("2-3", "Foxlink", "05c8:0b10")]
+    for host in ("127.0.0.1", "localhost", "::1"):
+        result = widget.prefer_local_device_names(host, 3240, remote)
+        assert result[0].name == "HP True Vision HD Camera"
+        assert result[0].vid_pid == "05c8:0b10"
+    assert remote[0].name == "Foxlink"
+    assert widget.prefer_local_device_names("other-host", 3240, remote)[0].name == "Foxlink"
+    assert widget.prefer_local_device_names("localhost", 4321, remote)[0].name == "Foxlink"
+    remote[0].vid_pid = "1234:5678"
+    assert widget.prefer_local_device_names("localhost", 3240, remote)[0].name == "Foxlink"
