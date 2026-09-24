@@ -16,6 +16,7 @@ from usbip_manager import (USBIP_TCP_PORT, build_usbip_list_command,
 
 
 from client_devices import ClientDevices
+from device_metadata import MetadataClient, merge_names
 
 
 class ClientModeTab(ClientDevices, QWidget):
@@ -23,6 +24,8 @@ class ClientModeTab(ClientDevices, QWidget):
     def __init__(self, gate=None, local_devices=None):
         super().__init__()
         self.gate = gate or OperationGate()
+        self.metadata_client = MetadataClient(self)
+        self.metadata_settings = None
         self.local_devices = local_devices or (lambda: [])
         self.devices = []
         self.imported_devices = []
@@ -124,7 +127,7 @@ class ClientModeTab(ClientDevices, QWidget):
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
         self.log_widget.document().setMaximumBlockCount(300)
-        self.log_widget.setPlaceholderText("Install usbip-win2 in Management on this PC, then list the remote host's devices.")
+        self.log_widget.setPlaceholderText("Install usbip-win2 in Components on this PC, then list the remote host's devices.")
         self.activity_panel = ActivityPanel(self.log_widget)
         root.addWidget(self.activity_panel)
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -189,7 +192,11 @@ class ClientModeTab(ClientDevices, QWidget):
     def _endpoint(self):
         return self.host_input.text().strip(), self.tcp_port_input.value()
 
+    def cancel_metadata(self):
+        self.metadata_client.cancel()
+
     def _invalidate_remote(self):
+        self.cancel_metadata()
         self.devices = []
         self._listed_endpoint = None
         self.device_combo.clear()
@@ -253,7 +260,32 @@ class ClientModeTab(ClientDevices, QWidget):
                 self.device_combo.setCurrentIndex(max(0, self.device_combo.findData(previous)))
             self.rebuild_device_table()
             self.log(f"Detected {len(self.devices)} exportable USB device(s) on {host}:{tcp_port}.")
+            self.retrieve_metadata(host, tcp_port)
         self._run("List remote devices", build_usbip_list_command(host, tcp_port), listed)
+
+    def retrieve_metadata(self, host, tcp_port):
+        settings = self.metadata_settings
+        if settings is None or str(settings.value("metadata/retrieve", "false")).lower() != "true":
+            return
+        try:
+            port = int(settings.value("metadata/port", 3241))
+        except (ValueError, TypeError):
+            return
+        if not 1024 <= port <= 65535 or port == tcp_port:
+            return
+        snapshot = list(self.devices)
+        def received(payload):
+            if self._endpoint() != (host, tcp_port) or self.devices != snapshot or self.gate.shutting_down:
+                return
+            updated = merge_names(snapshot, payload)
+            if updated == self.devices:
+                return
+            self.devices = updated
+            for i, device in enumerate(updated):
+                self.device_combo.setItemText(i, f"{device.busid} - {device.name}")
+                self.device_combo.setItemIcon(i, line_icon(device_icon_kind(device.name)))
+            self.rebuild_device_table()
+        self.metadata_client.fetch(host, port, received)
 
     @defer_background_action
     def refresh_imported_devices(self, after=None):
@@ -341,7 +373,7 @@ class ClientModeTab(ClientDevices, QWidget):
             command = [resolve_usbip_client(), *command[1:]]
         except OSError as error:
             self.log(record_exception(label, command, error))
-            self.log("Install usbip-win2 in Management on this Windows client.")
+            self.log("Install usbip-win2 in Components on this Windows client.")
             self._update_controls()
             if on_failure:
                 on_failure()

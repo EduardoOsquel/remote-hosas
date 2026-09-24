@@ -6,6 +6,8 @@ from PyQt6.QtSvg import QSvgRenderer
 
 
 PATHS = {
+    "components": '<path d="m12 2 9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 12v10M7 4.8l9 5V14"/>',
+
     "settings": '<path d="M4 3v18M12 3v18M20 3v18"/><rect x="1" y="6" width="6" height="4" rx="1"/><rect x="9" y="14" width="6" height="4" rx="1"/><rect x="17" y="7" width="6" height="4" rx="1"/>',
 
     "usb": '<path d="M12 21V3m-3 3 3-3 3 3M12 16l-6-4V9m6 4 6-4V6"/><circle cx="6" cy="7" r="2"/><path d="M16 3h4v3h-4z"/>',

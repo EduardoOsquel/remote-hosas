@@ -26,7 +26,8 @@ class SystemTray(QObject):
         self.show_action.triggered.connect(self.restore)
         self.tabs_menu = self.menu.addMenu("Open tab")
         for label, tab in (("Host Mode", window.host_tab), ("Client Mode", window.client_tab),
-                           ("Management", window.management_tab), ("Joystick", window.joystick_tab)):
+                           ("Components", window.management_tab), ("Joystick", window.joystick_tab),
+                           ("Settings", window.settings_tab)):
             action = self.tabs_menu.addAction(label)
             action.triggered.connect(lambda checked=False, tab=tab: self.open_tab(tab))
         self.menu.addSeparator()

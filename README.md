@@ -8,7 +8,7 @@ A Windows desktop application for sharing USB devices between Windows PCs and mo
 
 Download **RemoteHosas.exe** from [Releases](https://github.com/EduardoOsquel/remote-hosas/releases). This is a single-file **Windows x64** application: Python, Qt, pygame and icon assets are included. No application installer or Python installation is needed. Launch the EXE normally; it does not open a console. First launch can take a few seconds while bundled files are extracted.
 
-The USB/IP components and their drivers are separate prerequisites. Install the component needed for each PC from **Management**. The application executable is currently unsigned. A SHA-256 checksum accompanies the release for download verification.
+The USB/IP components and their drivers are separate prerequisites. Install the component needed for each PC from **Components**. The application executable is currently unsigned. A SHA-256 checksum accompanies the release for download verification.
 
 ## How it works
 
@@ -32,14 +32,14 @@ Use supported Windows versions for the upstream drivers. The included executable
 ### 1. Prepare the host
 
 1. Connect the physical USB device.
-2. Open **Management** and install **usbipd-win** if it is not detected. This installation uses Windows Package Manager (`winget`).
+2. Open **Components** and install **usbipd-win** if it is not detected. This installation uses Windows Package Manager (`winget`).
 3. Open **Host Mode**, click **List devices**, and select the device by its name and BUSID.
 4. Click **Bind / Share** and approve the administrator prompt. The table refreshes automatically; **Shared** appears in green.
 5. Identify the host address reachable from your client, for example its Ethernet IPv4 address.
 
 ### 2. Prepare the client
 
-1. Open **Management** and install **usbip-win2** if needed. Read the driver and restore-point explanation before continuing.
+1. Open **Components** and install **usbip-win2** if needed. Read the driver and restore-point explanation before continuing.
 2. Open **Client Mode**, enter the **host PC address** and leave the server TCP port at **3240** for a standard usbipd-win setup.
 3. Click **List remote devices**, select the shared device, then **Attach / Connect**.
 4. Check the imported-device list and open the Windows application that will use the device.
@@ -85,7 +85,7 @@ For errors, open **Management > Export diagnostics**. The export includes comman
 - Uses asynchronous commands with time limits and refreshes connections after actions.
 - Remembers the host and TCP port between sessions.
 
-### Management
+### Components
 
 - Detects the real installed executable paths, including supported custom client installation locations.
 - Installs/removes usbipd-win through winget and usbip-win2 through its official installer/uninstaller.
@@ -209,3 +209,27 @@ Host uses a fixed five-row table without a splitter. Expanding activity adds a b
 Client Mode uses one five-row device table (Device, State, BUSID), with shared details and connection actions below. Connected means imported on this PC. Matching uses the reported host, TCP port and BUSID; different DNS aliases for the same host may appear separately. Imports from other hosts remain visible for disconnection.
 
 Client defaults to 127.0.0.1 only when no host preference exists. Automatic remote checks start when Client Mode is visible. List remote devices sits beside the host address. Connected devices from all hosts remain in a separate table when the remote address changes. Selection is exclusive between the remote and connected tables. Actions are ordered Refresh connections, Connect, Disconnect, Disconnect all.
+
+## Settings: optional device names service
+
+Both name sharing and remote name retrieval are disabled by default. USB/IP uses
+TCP 3240 independently of this feature. To share names, open Settings on the host,
+add the individual IPv4 addresses of authorized clients under Access control,
+enable Share device names with clients, and apply. The default metadata port is
+TCP 3241. The host must keep this application running; its current Host list
+provides names only for shared devices. No serial numbers are transmitted.
+
+On the client enable Retrieve device names from host, choose the same metadata
+port, apply and list remote devices. Names are accepted only when BUSID and
+VID:PID match. Missing services, invalid responses and timeouts keep the original
+names. Queries run asynchronously with a two-second deadline and response limits.
+Changing endpoints cancels obsolete requests. Names do not alter device identity
+or connect/disconnect commands.
+
+Access control is a source IPv4 allowlist, not user authentication. The service
+uses unencrypted HTTP and listens on the host's IPv4 interfaces. Use only trusted
+LANs or a protected VPN such as Tailscale, and permit the metadata port through
+the host firewall only for authorized clients. The app does not change firewall
+rules. Add 127.0.0.1 explicitly for local service tests. IPv6 clients and CIDR
+ranges are not supported by this first version. Service status reports Disabled,
+Listening or a startup error. Settings are saved per Windows user.

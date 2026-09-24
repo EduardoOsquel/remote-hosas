@@ -20,11 +20,11 @@ def record_result(label, command, returncode, stdout="", stderr="") -> str:
     if returncode == 0:
         return f"[OK] {label} completed."
     return (f"[ERROR] {label} failed (exit code: {returncode}; "
-            f"0x{returncode & 0xffffffff:08X}). Export diagnostics in Management for details.")
+            f"0x{returncode & 0xffffffff:08X}). Export diagnostics in Components for details.")
 
 
 def record_exception(label, command, error) -> str:
     DIAGNOSTICS.append(f"{label}\nCommand: {command!r}\n{type(error).__name__}: {error}\n")
     if isinstance(error, FileNotFoundError):
         return f"[ERROR] {command[0]} was not found. Check its installation and PATH."
-    return f"[ERROR] {label} could not run. Export diagnostics in Management for details."
+    return f"[ERROR] {label} could not run. Export diagnostics in Components for details."

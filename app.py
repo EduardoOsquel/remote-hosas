@@ -36,6 +36,8 @@ from command_log import record_exception, record_result
 from ui_theme import APP_STYLESHEET, DeviceStateDelegate, make_button, setup_page
 from app_icon import application_icon, set_windows_app_id
 from about_ui import AboutDialog
+from device_metadata import MetadataService
+from settings_ui import SettingsTab
 from device_presentation import ContentScrollArea, ActivityPanel, details_label, HOST_STATES
 from ui_icons import line_icon, device_icon_kind
 from system_tray import SystemTray
@@ -504,6 +506,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.setStyleSheet(APP_STYLESHEET)
         self.setMinimumSize(900, 680)
 
+        self._settings = settings if settings is not None else QSettings("RemoteHosas", "USBIPBridge")
         tabs = QTabWidget()
         self.operation_gate = OperationGate()
         self.host_tab = HostModeTab(self.operation_gate)
@@ -512,9 +515,16 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.client_tab = ClientModeTab(self.operation_gate, local_devices=lambda: self.host_tab.devices)
         tabs.addTab(self.client_tab, line_icon("connect"), "Client Mode")
         self.management_tab = ManagementTab(self.operation_gate)
-        tabs.addTab(self.management_tab, line_icon("settings"), "Management")
+        tabs.addTab(self.management_tab, line_icon("components"), "Components")
         self.joystick_tab = JoystickTab()
         tabs.addTab(self.joystick_tab, line_icon("gaming"), "Joystick")
+        self.metadata_service = MetadataService(lambda: self.host_tab.devices, self)
+        self.settings_tab = SettingsTab(self._settings, self.metadata_service)
+        tabs.addTab(self.settings_tab, line_icon("settings"), "Settings")
+        self.client_tab.metadata_settings = self._settings
+        self.settings_tab.applied.connect(self.client_tab.cancel_metadata)
+        QApplication.instance().aboutToQuit.connect(self.metadata_service.stop)
+        self.destroyed.connect(self.metadata_service.stop)
         self.setCentralWidget(tabs)
         self.management_tab.about_btn.clicked.connect(self.show_about)
         self._about_dialog = None
