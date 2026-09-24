@@ -73,7 +73,7 @@ For errors, open **Management > Export diagnostics**. The export includes comman
 ### Host Mode
 
 - Detects local USB devices and existing share states at startup.
-- Keeps selection and table layout stable after refresh; drag the table/log separator to resize the panels.
+- Keeps selection and table layout stable after refresh; the table reserves space for five rows and scrolls for additional devices.
 - Enables Bind and Unbind according to the selected device state.
 - Executes commands asynchronously and requests administrator permission for sharing changes when required. Declined elevation is reported.
 - Refreshes device states after sharing attempts, including failures.
@@ -112,7 +112,7 @@ Automatic checks run every 30 seconds and when returning to the window. Unchange
 
 Manual actions take priority over background client list queries. Host, Client and Management operations are coordinated to prevent conflicting commands. Read-only background queries can be interrupted; installation and device-changing commands are not interrupted this way. Exit cleanup has an overall deadline and cancellation control.
 
-Preferences are stored per Windows user through QSettings (`RemoteHosas / USBIPBridge`): host, port, window size/maximized state and Host separator position. Saving preferences does not automatically attach or share devices. Diagnostics retain the most recent 100 command records in memory until exit or export.
+Preferences are stored per Windows user through QSettings (`RemoteHosas / USBIPBridge`): host, port, window size/maximized state. Saving preferences does not automatically attach or share devices. Diagnostics retain the most recent 100 command records in memory until exit or export.
 
 ## Run from source
 
@@ -188,3 +188,20 @@ assignments. They are saved by hardware GUID. When identical GUIDs are detected,
 aliases are only held for the current connection session; model GUIDs are not
 unique physical-device serial numbers. Recheck labels when replacing a controller
 with another of the same model. Game-specific remapping is not implemented.
+
+### Device presentation
+
+Host Mode puts the device name and icon first, followed by its state and BUSID.
+VID:PID appears in the selected-device details panel, alongside a plain-language
+explanation of sharing versus an active client attachment. Client selections show
+device icons and details for the remote endpoint or imported device source.
+Actions use Share, Stop sharing, Connect, Disconnect and Disconnect all; these
+invoke the same underlying USB/IP commands. Icons are name-based hints.
+
+Host and Client activity logs are collapsed initially and can be expanded through the Activity log section header and its disclosure arrow. The latest message stays visible; command errors remain
+visible with follow-up guidance until another operation starts. Diagnostics are
+still retained for export.
+
+Host headers and cells align device names left and state/BUSID centrally. Client content scrolls vertically on smaller windows to preserve space between details and actions.
+
+Host uses a fixed five-row table without a splitter. Expanding activity adds a bounded log below the device controls without resizing the table. Client detail cards fit their content and use compact margins.

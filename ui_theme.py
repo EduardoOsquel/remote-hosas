@@ -97,5 +97,8 @@ QMenu::item { padding: 8px 28px 8px 14px; border-radius: 4px; }
 QMenu::item:selected { background: #326ac5; color: #ffffff; }
 QMenu::item:disabled { color: #8291a6; background: transparent; }
 QMenu::separator { height: 1px; background: #384961; margin: 5px 8px; }
+QToolButton#sectionHeader { background: #202d40; color: #dce5f2; border: 1px solid #384961; border-radius: 5px; padding: 6px 12px; text-align: left; }
+QToolButton#sectionHeader:hover { background: #293e59; }
+QToolButton#sectionHeader:focus { border-color: #63a5ff; }
 QToolTip { background: #223148; color: #ffffff; border: 1px solid #405570; padding: 5px; }
 """

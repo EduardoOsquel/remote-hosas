@@ -126,11 +126,11 @@ def test_share_menus_filter_states_and_route_selected_busid(window):
     with patch.object(host, "bind_selected_device") as bind:
         tray.share_menu.actions()[0].trigger()
         bind.assert_called_once()
-        assert host.device_combo.currentData() == "1-1"
+        assert host.selected_busid() == "1-1"
     with patch.object(host, "unbind_selected_device") as unbind:
         tray.unshare_menu.actions()[1].trigger()
         unbind.assert_called_once()
-        assert host.device_combo.currentData() == "1-3"
+        assert host.selected_busid() == "1-3"
 
 
 def test_client_tray_actions_use_endpoint_and_virtual_port(window):
@@ -260,25 +260,21 @@ def test_automatic_refresh_deduplicates_errors_and_reports_recovery(window):
 
 
 
-def test_preferences_restore_endpoint_size_and_splitter(window):
+def test_preferences_restore_endpoint_and_size(window):
     application, widget, _ = window
     widget.client_tab.host_input.setText("my-host")
     widget.client_tab.tcp_port_input.setValue(4321)
     widget.resize(1200, 850)
     application.processEvents()
-    widget.host_tab.splitter.setSizes([400, 180])
-    expected_splitter = widget.host_tab.splitter.saveState()
     widget._save_preferences()
     widget.client_tab.host_input.setText("temporary")
     widget.client_tab.tcp_port_input.setValue(3240)
     widget.resize(1000, 700)
-    widget.host_tab.splitter.setSizes([200, 300])
     widget._restore_preferences()
     assert widget.client_tab.host_input.text() == "my-host"
     assert widget.client_tab.tcp_port_input.value() == 4321
     assert widget.width() == 1200
     assert widget.height() == 850
-    assert widget.host_tab.splitter.saveState() == expected_splitter
 
 
 def test_invalid_preferences_use_defaults(window):

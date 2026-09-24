@@ -1,8 +1,11 @@
 """Windows USB/IP client: remote exports and locally imported virtual ports."""
 
-from PyQt6.QtCore import pyqtSignal, QProcess, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QProcess, QTimer
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-                            QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox, QTextEdit)
+                            QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox, QTextEdit, QScrollArea)
+
+from device_presentation import ContentScrollArea, ActivityPanel, details_label
+from ui_icons import line_icon, device_icon_kind
 
 from operation_gate import OperationGate, defer_background_action
 from command_log import record_exception, record_result
@@ -24,14 +27,24 @@ class ClientModeTab(QWidget):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._timeout)
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = ContentScrollArea()
+        scroll.setFrameShape(scroll.Shape.NoFrame)
+        content = QWidget()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        root = QVBoxLayout(content)
         setup_page(root)
         help_text = QLabel("Connect this Windows PC to USB devices shared by another Windows PC.")
         help_text.setWordWrap(True)
         root.addWidget(help_text)
 
-        remote = QGroupBox("Remote Windows host - usbipd-win")
+        remote = QGroupBox("Remote Windows host")
+        remote.setStyleSheet("QGroupBox { padding: 0px; }")
         form = QFormLayout(remote)
+        form.setVerticalSpacing(8)
+        form.setContentsMargins(12, 20, 12, 12)
         self.host_input = QLineEdit()
         self.host_input.setPlaceholderText("Host IP or name (LAN or Tailscale)")
         self.tcp_port_input = QSpinBox()
@@ -50,20 +63,29 @@ class ClientModeTab(QWidget):
         self.device_combo.setMinimumContentsLength(24)
         self.device_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         form.addRow("Exportable USB device", self.device_combo)
+        self.remote_details = details_label(compact=True)
+        form.addRow(self.remote_details)
+        self.device_combo.currentIndexChanged.connect(self._show_remote_details)
         actions = QHBoxLayout()
         self.list_btn = make_button("List remote devices", "refresh")
         self.list_btn.clicked.connect(self.refresh_remote_devices)
-        self.attach_btn = make_button("Attach / Connect", "connect")
+        self.attach_btn = make_button("Connect", "connect")
         self.attach_btn.setProperty("primary", True)
         self.attach_btn.clicked.connect(self.attach_selected_device)
         actions.addWidget(self.list_btn)
         actions.addWidget(self.attach_btn)
         actions.addStretch()
-        form.addRow(actions)
+        action_panel = QWidget()
+        action_panel.setLayout(actions)
+        actions.setContentsMargins(0, 4, 0, 0)
+        form.addRow(action_panel)
         root.addWidget(remote)
 
-        local = QGroupBox("Imported devices on this PC - usbip-win2")
+        local = QGroupBox("Imported devices on this PC")
+        local.setStyleSheet("QGroupBox { padding: 0px; }")
         local_layout = QVBoxLayout(local)
+        local_layout.setContentsMargins(12, 20, 12, 12)
+        local_layout.setSpacing(8)
         explanation = QLabel("Detach uses the device's virtual USB port, not the server TCP port.")
         explanation.setWordWrap(True)
         local_layout.addWidget(explanation)
@@ -71,12 +93,15 @@ class ClientModeTab(QWidget):
         self.port_input.setMinimumContentsLength(24)
         self.port_input.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         local_layout.addWidget(self.port_input)
+        self.imported_details = details_label(compact=True)
+        local_layout.addWidget(self.imported_details)
+        self.port_input.currentIndexChanged.connect(self._show_imported_details)
         local_actions = QHBoxLayout()
         self.refresh_imported_btn = make_button("Refresh connections", "refresh")
         self.refresh_imported_btn.clicked.connect(lambda: self.refresh_imported_devices())
-        self.detach_btn = make_button("Detach / Disconnect", "disconnect")
+        self.detach_btn = make_button("Disconnect", "disconnect")
         self.detach_btn.clicked.connect(self.detach_selected_device)
-        self.detach_all_btn = make_button("Detach all", "disconnect")
+        self.detach_all_btn = make_button("Disconnect all", "disconnect")
         self.detach_all_btn.setToolTip("Disconnect all USB/IP devices imported into this PC, from every host.")
         self.detach_all_btn.clicked.connect(self.detach_all_devices)
         local_actions.addWidget(self.refresh_imported_btn)
@@ -89,13 +114,30 @@ class ClientModeTab(QWidget):
         self.log_widget.setReadOnly(True)
         self.log_widget.document().setMaximumBlockCount(300)
         self.log_widget.setPlaceholderText("Install usbip-win2 in Management on this PC, then list the remote host's devices.")
-        root.addWidget(QLabel("Client activity"))
-        root.addWidget(self.log_widget, 1)
+        self.activity_panel = ActivityPanel(self.log_widget)
+        root.addWidget(self.activity_panel)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.host_input.textChanged.connect(self._invalidate_remote)
         self.tcp_port_input.valueChanged.connect(self._invalidate_remote)
         self._invalidate_remote()
         self._set_imported([])
         self.gate.changed.connect(self._update_controls)
+
+    def _show_remote_details(self):
+        busid = self.device_combo.currentData()
+        device = next((d for d in self.devices if d.busid == busid), None)
+        if device:
+            host, port = self._endpoint()
+            self.remote_details.setText(f"{device.name}\nExported by {host}:{port} - connection availability is checked when connecting.\n"
+                f"BUSID: {device.busid} | VID:PID: {device.vid_pid or '-'}")
+        else:
+            self.remote_details.setText("List remote devices and select one to see its details.")
+
+    def _show_imported_details(self):
+        port = self.port_input.currentData()
+        device = next((d for d in self.imported_devices if d.port == port), None)
+        self.imported_details.setText(f"{device.name}\nImported on this PC | Virtual USB port: {device.port}\n"
+            f"Source: {device.location}" if device else "No imported device selected.")
 
     @property
     def is_busy(self):
@@ -105,6 +147,7 @@ class ClientModeTab(QWidget):
         if getattr(self, "_silent_logs", None) is not None:
             self._silent_logs.append(message)
             return
+        self.activity_panel.update_message(message)
         self.activity.emit(message)
         cursor = self.log_widget.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
@@ -152,7 +195,7 @@ class ClientModeTab(QWidget):
         self.imported_devices = devices
         self.port_input.clear()
         for device in devices:
-            self.port_input.addItem(f"Port {device.port} - {device.name} - {device.location}", device.port)
+            self.port_input.addItem(line_icon(device_icon_kind(device.name)), f"{device.name} - Port {device.port}", device.port)
         if not devices:
             self.port_input.addItem("No imported devices detected")
         else:
@@ -179,7 +222,7 @@ class ClientModeTab(QWidget):
             self._listed_endpoint = (host, tcp_port)
             self.device_combo.clear()
             for device in self.devices:
-                self.device_combo.addItem(f"{device.busid} - {device.name}", device.busid)
+                self.device_combo.addItem(line_icon(device_icon_kind(device.name)), f"{device.name} - {device.busid}", device.busid)
             if not self.devices:
                 self.device_combo.addItem("No exportable devices on this host")
             else:

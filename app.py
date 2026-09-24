@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QProgressDialog,
     QMessageBox,
-    QSplitter,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -36,6 +36,8 @@ from command_log import record_exception, record_result
 from ui_theme import APP_STYLESHEET, DeviceStateDelegate, make_button, setup_page
 from app_icon import application_icon, set_windows_app_id
 from about_ui import AboutDialog
+from device_presentation import ContentScrollArea, ActivityPanel, details_label, HOST_STATES
+from ui_icons import line_icon, device_icon_kind
 from system_tray import SystemTray
 
 from joystick_bridge import JoystickPacket, JoystickState
@@ -56,22 +58,25 @@ class HostModeTab(QWidget):
         self.devices: List[UsbipDevice] = []
         self._log_buffer: List[str] = []
 
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = ContentScrollArea()
+        scroll.setFrameShape(scroll.Shape.NoFrame)
+        content = QWidget()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        root = QVBoxLayout(content)
         setup_page(root)
 
-        host_note = QLabel("Share USB devices physically connected to this Windows PC. Server: usbipd-win | TCP 3240. Bind / Unbind require administrator rights.")
+        host_note = QLabel("Share USB devices physically connected to this Windows PC. Server: usbipd-win | TCP 3240. Sharing changes require administrator rights.")
         host_note.setWordWrap(True)
         root.addWidget(host_note)
 
-        self.device_combo = QComboBox()
-        self.device_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.device_combo.setMinimumContentsLength(24)
-        self.device_combo.addItem("No shared USB devices")
-        root.addWidget(QLabel("Selected USB device"))
-        root.addWidget(self.device_combo)
-
         self.device_table = QTableWidget(0, 4)
         self.device_table.setHorizontalHeaderLabels(["BUSID", "VID:PID", "DEVICE", "STATE"])
+        for column in range(4):
+            alignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter if column == 2 else Qt.AlignmentFlag.AlignCenter
+            self.device_table.horizontalHeaderItem(column).setTextAlignment(alignment)
         self.device_table.setItemDelegateForColumn(3, DeviceStateDelegate(self.device_table))
         self.device_table.verticalHeader().setVisible(False)
         self.device_table.setAlternatingRowColors(True)
@@ -86,23 +91,31 @@ class HostModeTab(QWidget):
         header.setMinimumSectionSize(90)
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.device_table.itemSelectionChanged.connect(self._select_table_device)
-        self.device_combo.currentIndexChanged.connect(self._select_combo_device)
-        self.device_table.setMinimumHeight(220)
+        header.moveSection(header.visualIndex(2), 0)
+        header.moveSection(header.visualIndex(3), 1)
+        self.device_table.setColumnHidden(1, True)
+        self.device_table.itemSelectionChanged.connect(self._update_controls)
+        self.device_table.ensurePolished()
+        self.device_table.setFixedHeight(self.device_table.horizontalHeader().sizeHint().height()
+            + 5 * self.device_table.verticalHeader().defaultSectionSize() + 2 * self.device_table.frameWidth())
         self.device_panel = QWidget()
         device_layout = QVBoxLayout(self.device_panel)
-        device_layout.setContentsMargins(0, 0, 0, 0)
+        device_layout.setContentsMargins(0, 0, 0, 14)
         device_layout.setSpacing(10)
         self.device_count = QLabel("Local USB devices")
         device_layout.addWidget(self.device_count)
         device_layout.addWidget(self.device_table, 1)
+        self.device_details = details_label()
+        device_layout.addWidget(self.device_details)
 
         actions = QHBoxLayout()
         self.list_btn = self._make_button("List devices", "refresh")
         self.list_btn.clicked.connect(self.refresh_usbipd_devices)
-        self.bind_btn = self._make_button("Bind / Share", "share")
+        self.bind_btn = self._make_button("Share", "share")
+        self.bind_btn.setToolTip("Share this device (usbipd bind). Requires administrator approval.")
         self.bind_btn.clicked.connect(self.bind_selected_device)
-        self.unbind_btn = self._make_button("Unbind / Stop sharing", "disconnect")
+        self.unbind_btn = self._make_button("Stop sharing", "disconnect")
+        self.unbind_btn.setToolTip("Stop sharing this device (usbipd unbind). An active client will lose access.")
         self.unbind_btn.clicked.connect(self.unbind_selected_device)
         actions.addWidget(self.list_btn)
         actions.addWidget(self.bind_btn)
@@ -114,24 +127,23 @@ class HostModeTab(QWidget):
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
         self.log_widget.setPlaceholderText("Host logs...")
-        log_panel = QWidget()
-        log_layout = QVBoxLayout(log_panel)
-        log_layout.setContentsMargins(0, 0, 0, 0)
-        log_layout.addWidget(QLabel("Activity log"))
-        log_layout.addWidget(self.log_widget)
+        self.activity_panel = ActivityPanel(self.log_widget)
+        log_panel = self.activity_panel
         self.log_widget.setMinimumHeight(100)
-        self.splitter = QSplitter(Qt.Orientation.Vertical)
-        self.splitter.setChildrenCollapsible(False)
-        self.splitter.addWidget(self.device_panel)
-        self.splitter.addWidget(log_panel)
-        self.splitter.setStretchFactor(0, 3)
-        self.splitter.setStretchFactor(1, 1)
-        self.splitter.setSizes([480, 160])
-        root.addWidget(self.splitter, 1)
+        root.addWidget(self.device_panel)
+        root.addWidget(log_panel)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
+
 
         self.gate.changed.connect(self._update_controls)
         self._update_controls()
         QTimer.singleShot(0, self.refresh_usbipd_devices)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.device_table.setFixedHeight(self.device_table.horizontalHeader().sizeHint().height()
+            + 5 * self.device_table.verticalHeader().defaultSectionSize()
+            + 2 * self.device_table.frameWidth())
 
     _make_button = staticmethod(make_button)
 
@@ -139,6 +151,7 @@ class HostModeTab(QWidget):
         if getattr(self, "_silent_logs", None) is not None:
             self._silent_logs.append(message)
             return
+        self.activity_panel.update_message(message)
         self.activity.emit(message)
         self._log_buffer.append(message)
         if len(self._log_buffer) > 250:
@@ -155,9 +168,15 @@ class HostModeTab(QWidget):
             return
         idle = not self.is_busy and self.gate.available(self)
         self.list_btn.setEnabled(idle)
-        self.device_combo.setEnabled(idle and bool(self.devices))
-        index = self.device_combo.currentIndex()
+        self.device_table.setEnabled(idle and bool(self.devices))
+        index = self.selected_index()
         state = self.devices[index].state if 0 <= index < len(self.devices) else None
+        if state is not None:
+            device = self.devices[index]
+            self.device_details.setText(f"{device.name}\n{HOST_STATES.get(state, state)}\n"
+                f"BUSID: {device.busid} | VID:PID: {device.vid_pid or '-'} | Source: This PC")
+        else:
+            self.device_details.setText("Select a device to see its details.")
         self.bind_btn.setEnabled(idle and state == "Not shared")
         self.unbind_btn.setEnabled(idle and state in {"Shared", "Shared (forced)", "Attached"})
 
@@ -204,43 +223,42 @@ class HostModeTab(QWidget):
             self.gate.release(self)
             self._update_controls()
 
-    def _select_table_device(self) -> None:
-        row = self.device_table.currentRow()
-        if self.device_table.selectedItems() and 0 <= row < len(self.devices):
-            self.device_combo.setCurrentIndex(row)
+    def selected_index(self):
+        return self.device_table.currentRow() if self.device_table.selectedItems() else -1
 
-    def _select_combo_device(self, index: int) -> None:
-        if 0 <= index < self.device_table.rowCount():
-            self.device_table.selectRow(index)
-        self._update_controls()
+    def selected_busid(self):
+        index = self.selected_index()
+        return self.devices[index].busid if 0 <= index < len(self.devices) else None
+
+    def select_busid(self, busid):
+        for index, device in enumerate(self.devices):
+            if device.busid == busid:
+                self.device_table.selectRow(index)
+                return True
+        return False
 
     def _set_devices(self, devices: List[UsbipDevice], empty_text: str = "No USB devices detected") -> None:
         if self.gate.background and self.devices == devices:
             return
-        previous = self.device_combo.currentData()
+        previous = self.selected_busid()
         self.devices = devices
-        self.device_combo.blockSignals(True)
         self.device_table.blockSignals(True)
-        self.device_combo.clear()
         self.device_table.setRowCount(len(devices))
         for row, device in enumerate(devices):
-            self.device_combo.addItem(f"{device.busid} - {device.name}", device.busid)
             for column, value in enumerate((device.busid, device.vid_pid or "-",
                                             device.name or "Unknown device", device.state or "Not shared")):
                 item = QTableWidgetItem(value)
-                item.setToolTip(value)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter if column == 2 else Qt.AlignmentFlag.AlignCenter)
+                item.setToolTip(HOST_STATES.get(value, value) if column == 3 else value)
+                if column == 2:
+                    item.setIcon(line_icon(device_icon_kind(device.name)))
                 self.device_table.setItem(row, column, item)
         if devices:
-            index = self.device_combo.findData(previous)
-            index = max(0, index)
-            self.device_combo.setCurrentIndex(index)
+            index = next((i for i, d in enumerate(devices) if d.busid == previous), 0)
             self.device_table.selectRow(index)
-        else:
-            self.device_combo.addItem(empty_text)
-        self.device_combo.blockSignals(False)
         self.device_table.blockSignals(False)
         self._update_controls()
-        self.device_count.setText(f"Local USB devices - {len(devices)} detected")
+        self.device_count.setText(f"Local USB devices - {len(devices)} detected" if devices else empty_text)
 
     @defer_background_action
     def refresh_usbipd_devices(self):
@@ -248,7 +266,7 @@ class HostModeTab(QWidget):
 
     @defer_background_action
     def bind_selected_device(self) -> None:
-        idx = self.device_combo.currentIndex()
+        idx = self.selected_index()
         if idx < 0 or idx >= len(self.devices):
             QMessageBox.warning(self, "Warning", "Select a device from the list.")
             return
@@ -259,7 +277,7 @@ class HostModeTab(QWidget):
 
     @defer_background_action
     def unbind_selected_device(self) -> None:
-        idx = self.device_combo.currentIndex()
+        idx = self.selected_index()
         if idx < 0 or idx >= len(self.devices):
             QMessageBox.warning(self, "Warning", "Select a device from the list.")
             return
@@ -517,7 +535,6 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self._restore_preferences()
         self.client_tab.host_input.textChanged.connect(self._schedule_save)
         self.client_tab.tcp_port_input.valueChanged.connect(self._schedule_save)
-        self.host_tab.splitter.splitterMoved.connect(self._schedule_save)
 
     def show_about(self):
         if self._about_dialog is None:
@@ -540,9 +557,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.client_tab.tcp_port_input.setValue(integer("client/port", 3240, 1024, 65535))
         self.resize(integer("window/width", 1100, 900, 16000),
                     integer("window/height", 800, 680, 16000))
-        state = self._settings.value("host/splitter")
-        if isinstance(state, QByteArray):
-            self.host_tab.splitter.restoreState(state)
+
         maximized = str(self._settings.value("window/maximized", "false")).lower() == "true"
         self.tray.restore_maximized = maximized
         if maximized:
@@ -565,7 +580,6 @@ class UsbipJoystickBridgeApp(QMainWindow):
             self._settings.setValue("window/width", normal.width())
             self._settings.setValue("window/height", normal.height())
         self._settings.setValue("window/maximized", self.tray.restore_maximized if self.isMinimized() else self.isMaximized())
-        self._settings.setValue("host/splitter", self.host_tab.splitter.saveState())
         self._settings.sync()
         if self._settings.status() != QSettings.Status.NoError:
             self.statusBar().showMessage("Unable to save preferences. Check your user profile permissions.", 8000)

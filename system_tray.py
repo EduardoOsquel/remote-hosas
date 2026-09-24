@@ -189,7 +189,7 @@ class SystemTray(QObject):
         if not any(d.busid == busid and d.state in expected for d in host.devices):
             return
         def action():
-            host.device_combo.setCurrentIndex(host.device_combo.findData(busid))
+            host.select_busid(busid)
             (host.bind_selected_device if share else host.unbind_selected_device)()
         self._invoke(host, action)
 

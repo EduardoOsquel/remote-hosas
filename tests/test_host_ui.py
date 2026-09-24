@@ -73,11 +73,11 @@ def test_refresh_fills_available_width_after_maximizing(host):
 def test_selection_is_synchronized_preserved_and_used_for_bind(host):
     application, widget, command = host
     widget.device_table.selectRow(1)
-    assert widget.device_combo.currentData() == "1-3"
+    assert widget.selected_busid() == "1-3"
     command.return_value = CompletedProcess([], 0, OUTPUT.replace(
         "1-1 046d:c548 Logitech USB Input Device Not shared\n", ""), "")
     widget.refresh_usbipd_devices()
-    assert widget.device_combo.currentData() == "1-3"
+    assert widget.selected_busid() == "1-3"
     assert widget.device_table.currentRow() == 0
     command.reset_mock()
     widget.bind_btn.click()
@@ -102,7 +102,7 @@ def test_sharing_actions_refresh_visible_state_and_keep_selection(host, action, 
         ["usbipd", action, "--busid=1-3"], ["usbipd", "list"]]
     assert widget.device_table.item(1, 3).text() == state
     assert widget.devices[1].state == state
-    assert widget.device_combo.currentData() == "1-3"
+    assert widget.selected_busid() == "1-3"
     assert widget.device_table.currentRow() == 1
     assert widget.device_count.text() == "Local USB devices - 2 detected"
     assert widget.device_table.size() == before
@@ -136,6 +136,20 @@ def test_empty_or_failed_refresh_removes_stale_devices(host, failure):
 def test_buttons_follow_selected_state(host, state, bind, unbind):
     _, widget, _ = host
     widget.devices[1].state = state
-    widget.device_combo.setCurrentIndex(1)
+    widget.device_table.selectRow(1)
     assert widget.bind_btn.isEnabled() == bind
     assert widget.unbind_btn.isEnabled() == unbind
+
+
+def test_activity_expansion_keeps_five_row_table_and_summary_stable(host):
+    application, widget, _ = host
+    before = widget.device_table.height()
+    summary_height = widget.activity_panel.summary.height()
+    widget.activity_panel.toggle.click()
+    application.processEvents()
+    assert widget.device_table.height() == before
+    assert widget.activity_panel.summary.height() == summary_height
+    assert widget.device_table.viewport().height() >= 5 * widget.device_table.rowHeight(0)
+    widget.activity_panel.toggle.click()
+    application.processEvents()
+    assert widget.device_table.height() == before
