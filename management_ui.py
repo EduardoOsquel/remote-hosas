@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QProcess
+from PyQt6.QtCore import QProcess, Qt
 from PyQt6.QtWidgets import (
     QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QProgressBar, QTextEdit,
     QVBoxLayout, QWidget,
@@ -16,6 +16,7 @@ from operation_gate import OperationGate, defer_background_action
 from host_commands import resolve_host
 from command_log import DIAGNOSTICS, record_exception, record_result
 from ui_theme import make_button, setup_page
+from device_presentation import ActivityPanel, ContentScrollArea
 from usbip_manager import (build_usbipd_install_command, build_usbip_win2_install_command,
                            build_usbip_win2_uninstall_command)
 from usbip_installer import find_client_installation, supported_architecture, InstallError
@@ -26,8 +27,15 @@ class ManagementTab(QWidget):
         super().__init__()
         self.gate = gate or OperationGate()
         self._process = None
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = ContentScrollArea()
+        content = QWidget()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        root = QVBoxLayout(content)
         setup_page(root)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         heading = QHBoxLayout()
         title = QLabel("Software components")
@@ -93,7 +101,6 @@ class ManagementTab(QWidget):
         root.addWidget(self.progress)
 
         log_header = QHBoxLayout()
-        log_header.addWidget(QLabel("Activity log"))
         log_header.addStretch()
         self.export_btn = make_button("Export diagnostics", "save")
         self.export_btn.clicked.connect(self.export_diagnostics)
@@ -106,7 +113,10 @@ class ManagementTab(QWidget):
         self.log_widget.setReadOnly(True)
         self.log_widget.document().setMaximumBlockCount(300)
         self.log_widget.setPlaceholderText("Component actions and results will appear here.")
-        root.addWidget(self.log_widget, 1)
+        self.activity_panel = ActivityPanel(self.log_widget)
+        # Components already displays operation progress above the log.
+        self.activity_panel.summary.hide()
+        root.addWidget(self.activity_panel)
         self.refresh_installation_status()
         self.gate.changed.connect(self.refresh_installation_status)
 
@@ -144,6 +154,7 @@ class ManagementTab(QWidget):
         return card, badge
 
     def log(self, message: str) -> None:
+        self.activity_panel.update_message(message)
         # Insert as plain text: command messages must never be interpreted as HTML.
         self.log_widget.moveCursor(self.log_widget.textCursor().MoveOperation.End)
         self.log_widget.insertPlainText(f"[{datetime.now():%H:%M:%S}] {message}\n")
