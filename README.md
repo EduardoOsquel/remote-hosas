@@ -170,3 +170,21 @@ Currently provided at no charge. Future versions may have different availability
 - [PyQt6](https://www.riverbankcomputing.com/software/pyqt/): Qt bindings for the interface.
 - [pygame](https://www.pygame.org/): controller monitoring.
 - [PyInstaller](https://pyinstaller.org/): standalone executable packaging.
+
+### Controller identification and aliases
+
+The Joystick tab includes live axis bars (signed -1 to +1), numbered button
+indicators and hat directions. Indices are zero-based. Stopping monitoring leaves
+the last reading visible; it is no longer live.
+
+Use **Identify controller**, then move one axis or press a button on the desired
+controller. Identification selects it without starting monitoring. Small axis
+jitter is ignored; multiple active devices require another attempt. Identification
+can be cancelled and ends after 15 seconds without input. Refresh stops it too.
+
+Enter an alias such as Left stick, Right stick or Throttle and press Enter or
+leave the field. Aliases are local labels and do not change Windows or game
+assignments. They are saved by hardware GUID. When identical GUIDs are detected,
+aliases are only held for the current connection session; model GUIDs are not
+unique physical-device serial numbers. Recheck labels when replacing a controller
+with another of the same model. Game-specific remapping is not implemented.

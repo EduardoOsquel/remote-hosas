@@ -269,7 +269,10 @@ class HostModeTab(QWidget):
         self.run_command(f"Unbind device {busid}", build_usbipd_unbind_command(busid), refresh=True)
 
 
-class JoystickTab(QWidget):
+from joystick_tools import JoystickTools
+
+
+class JoystickTab(JoystickTools, QWidget):
     _make_button = staticmethod(make_button)
 
     def __init__(self) -> None:
@@ -328,6 +331,8 @@ class JoystickTab(QWidget):
         root.addWidget(QLabel("Joystick activity"))
         root.addWidget(self.log, 1)
 
+        self._pygame = pygame
+        self.setup_tools(form, root, buttons_row, QSettings("RemoteHosas", "USBIPBridge"))
         self.refresh_devices()
 
     def log_message(self, text: str) -> None:
@@ -356,14 +361,17 @@ class JoystickTab(QWidget):
     def _show_device_details(self):
         info = self.device_combo.currentData()
         self.device_details.setText(info["details"] if info else "No controller selected")
+        self.show_alias()
 
     def refresh_devices(self) -> None:
+        self.cancel_identification()
         self.stop_monitoring(announce=False)
         self._devices = []
         self.device_combo.clear()
         self.live_state.setPlainText("")
         self.connect_btn.setEnabled(False)
         if pygame is None:
+            self.identify_btn.setEnabled(False)
             self.device_combo.addItem("PyGame not installed")
             self.log_message("PyGame is not installed. Install it with: pip install pygame PyQt6")
             return
@@ -384,7 +392,8 @@ class JoystickTab(QWidget):
                                f"Hats: {joystick.get_numhats()} | Power: {joystick.get_power_level()}")
                     self._devices.append(name)
                     self.device_combo.addItem(f"{idx} - {name}",
-                        {"index": idx, "instance": instance, "details": details})
+                        {"index": idx, "instance": instance, "details": details,
+                         "name": name, "guid": joystick.get_guid()})
                 except pygame.error:
                     self.log_message(f"Controller {idx} became unavailable. Refresh to try again.")
                 finally:
@@ -398,6 +407,7 @@ class JoystickTab(QWidget):
         if not self._devices:
             self.device_combo.addItem("No joysticks detected")
         self.connect_btn.setEnabled(bool(self._devices))
+        self.prepare_aliases()
         self._show_device_details()
         self.log_message(f"Detected {len(self._devices)} joystick(s).")
 
@@ -449,6 +459,7 @@ class JoystickTab(QWidget):
             self._disconnect_monitor()
             return
 
+        self.render_indicators(axes, buttons, hats)
         state = JoystickState(axes=axes, buttons=buttons, hats=hats)
         text = ("Axes: " + " | ".join(f"{i}: {value:+.3f}" for i, value in enumerate(state.axes))
                 + "\nPressed buttons (0-based): " + (", ".join(str(i) for i, pressed in enumerate(state.buttons) if pressed) or "None")
@@ -648,6 +659,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         self.tray._refresh_steps.clear()
         self.tray._automatic_cycle = False
         self.tray._notification_source = None
+        self.joystick_tab.cancel_identification()
         if self.joystick_tab._timer is not None:
             self.joystick_tab._timer.stop()
         self.tray.restore()
