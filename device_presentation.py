@@ -71,11 +71,17 @@ class ActivityPanel(QWidget):
             parent = parent.parentWidget()
 
     def update_message(self, message):
-        self.summary.setText(message)
+        # Both tabs show operation status, never incidental detail lines.
         if message.startswith("> "):
+            self.summary.setText("In progress: " + message[2:])
             self.error.clear()
             self.error.hide()
-        elif "[ERROR]" in message:
+        elif message.startswith("[OK]"):
+            self.summary.setText(message)
+            self.error.clear()
+            self.error.hide()
+        elif message.startswith("[ERROR]"):
+            self.summary.setText("Operation failed. See details below.")
             self.error.setText(message)
             self.error.show()
 

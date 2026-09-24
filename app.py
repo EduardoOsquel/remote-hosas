@@ -2,7 +2,7 @@ import subprocess
 import sys
 from typing import List, Optional
 
-from PyQt6.QtCore import QSettings, QByteArray, pyqtSignal, QEvent, Qt, QTimer
+from PyQt6.QtCore import QSize, QSettings, QByteArray, pyqtSignal, QEvent, Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -507,13 +507,14 @@ class UsbipJoystickBridgeApp(QMainWindow):
         tabs = QTabWidget()
         self.operation_gate = OperationGate()
         self.host_tab = HostModeTab(self.operation_gate)
-        tabs.addTab(self.host_tab, "Host Mode")
+        tabs.setIconSize(QSize(18, 18))
+        tabs.addTab(self.host_tab, line_icon("share"), "Host Mode")
         self.client_tab = ClientModeTab(self.operation_gate)
-        tabs.addTab(self.client_tab, "Client Mode")
+        tabs.addTab(self.client_tab, line_icon("connect"), "Client Mode")
         self.management_tab = ManagementTab(self.operation_gate)
-        tabs.addTab(self.management_tab, "Management")
+        tabs.addTab(self.management_tab, line_icon("settings"), "Management")
         self.joystick_tab = JoystickTab()
-        tabs.addTab(self.joystick_tab, "Joystick")
+        tabs.addTab(self.joystick_tab, line_icon("gaming"), "Joystick")
         self.setCentralWidget(tabs)
         self.management_tab.about_btn.clicked.connect(self.show_about)
         self._about_dialog = None

@@ -278,3 +278,16 @@ def test_manual_action_cannot_be_cancelled_as_background(client):
     process.kill.assert_not_called()
     widget._process = None
     widget.gate.background = False
+
+
+def test_remote_name_is_clean_and_identifiers_appear_in_details(client):
+    _, widget = client
+    widget.host_input.setText("host-pc")
+    output = "2-3 : Cheng Uei Precision Industry Co., Ltd (Foxlink) : unknown product (05c8:0b10)"
+    with simulate(widget, output):
+        widget.refresh_remote_devices()
+    assert widget.device_combo.currentText() == "2-3 - Cheng Uei Precision Industry Co., Ltd (Foxlink)"
+    assert not widget.device_combo.itemIcon(0).isNull()
+    assert widget.device_combo.currentData() == "2-3"
+    assert "VID:PID: 05c8:0b10" in widget.remote_details.text()
+    assert "unknown product" not in widget.remote_details.text()

@@ -100,3 +100,14 @@ def test_tcp_port_is_not_a_detach_port():
     assert build_usbip_list_command("my-host", 4000) == ["usbip", "--tcp-port=4000", "list", "-r", "my-host"]
     with pytest.raises(ValueError):
         build_usbip_detach_command("3240")
+
+
+def test_remote_names_keep_real_products_and_non_identifier_parentheses():
+    from usbip_manager import parse_remote_devices
+    devices = parse_remote_devices("1-1 : Vendor (Brand) : Flight Stick (ABCD:0123)\n2-1 : Camera (Front)\n3-1 : unknown product (1234:5678)")
+    assert devices[0].name == "Vendor (Brand) : Flight Stick"
+    assert devices[0].vid_pid == "abcd:0123"
+    assert devices[1].name == "Camera (Front)"
+    assert devices[1].vid_pid == ""
+    assert devices[2].name == "USB device"
+    assert devices[2].vid_pid == "1234:5678"

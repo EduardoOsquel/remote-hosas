@@ -256,6 +256,9 @@ class SystemTray(QObject):
                 for message in errors:
                     tab.log(message)
         elif before != after or previous_errors:
+            result = next((message for message in reversed(messages) if message.startswith("[OK]")), None)
+            if result:
+                tab.activity_panel.update_message(result)
             tab.log(f"{scope} updated - {len(after)} device(s) detected." +
                     (" Connection restored." if previous_errors else ""))
 

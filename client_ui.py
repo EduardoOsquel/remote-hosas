@@ -222,7 +222,7 @@ class ClientModeTab(QWidget):
             self._listed_endpoint = (host, tcp_port)
             self.device_combo.clear()
             for device in self.devices:
-                self.device_combo.addItem(line_icon(device_icon_kind(device.name)), f"{device.name} - {device.busid}", device.busid)
+                self.device_combo.addItem(line_icon(device_icon_kind(device.name)), f"{device.busid} - {device.name}", device.busid)
             if not self.devices:
                 self.device_combo.addItem("No exportable devices on this host")
             else:

@@ -139,7 +139,18 @@ def parse_remote_devices(output: str) -> List[UsbipDevice]:
         match = re.match(r"^\s*(\d+-[\d.]+)\s*:\s*(.+)$", line)
         if match:
             busid, name = match.groups()
-            devices.append(UsbipDevice(busid, name.strip(), state="Exportable"))
+            name = name.strip()
+            vid_pid = ""
+            identifiers = re.search(r"\s*\(([0-9a-fA-F]{4}:[0-9a-fA-F]{4})\)\s*$", name)
+            if identifiers:
+                vid_pid = identifiers[1].lower()
+                name = name[:identifiers.start()].strip()
+            # usbip uses this placeholder when its USB ID database lacks a
+            # product name. Preserve the vendor and any actual product name.
+            name = re.sub(r"\s*:\s*unknown product\s*$", "", name, flags=re.I).strip()
+            if not name or name.casefold() == "unknown product":
+                name = "USB device"
+            devices.append(UsbipDevice(busid, name, vid_pid=vid_pid, state="Exportable"))
     return devices
 
 

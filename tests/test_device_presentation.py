@@ -112,3 +112,22 @@ def test_repeated_disclosure_releases_scroll_range_and_keeps_width():
         assert scroll.verticalScrollBar().maximum() == initial[1]
     widget.close()
     widget.deleteLater()
+
+
+def test_activity_summary_uses_same_operation_policy_for_both_tabs():
+    application = QApplication.instance() or QApplication([])
+    for detail in ("Shared host devices: 1. Sharing remains enabled when this application exits.",
+                   "Detected 1 exportable USB device(s) on host:3240."):
+        panel = ActivityPanel(QTextEdit())
+        panel.update_message("> List devices")
+        assert panel.summary.text() == "In progress: List devices"
+        panel.update_message("[OK] List devices completed.")
+        panel.update_message(detail)
+        assert panel.summary.text() == "[OK] List devices completed."
+        panel.update_message("[ERROR] List devices failed")
+        panel.update_message("Check the host address")
+        assert "failed" in panel.summary.text()
+        assert not panel.error.isHidden()
+        panel.update_message("[OK] List devices completed.")
+        assert panel.error.isHidden()
+        panel.deleteLater()
