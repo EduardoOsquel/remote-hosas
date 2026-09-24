@@ -54,3 +54,44 @@ def test_management_uses_host_resolver_and_handles_access_failure():
         widget.refresh_installation_status()
         assert widget.usbipd_status.text() == "Not detected"
     widget.deleteLater()
+
+
+def test_monitor_toggle_keeps_samples_out_of_log():
+    application = QApplication.instance() or QApplication([])
+    pygame = MagicMock()
+    pygame.error = RuntimeError
+    pygame.joystick.get_count.return_value = 1
+    pygame.event.get.return_value = []
+    device = pygame.joystick.Joystick.return_value
+    device.get_name.return_value = "Flight stick"
+    device.get_instance_id.return_value = 42
+    device.get_guid.return_value = "hardware-guid"
+    device.get_numaxes.return_value = 1
+    device.get_numbuttons.return_value = 1
+    device.get_numhats.return_value = 0
+    device.get_axis.return_value = 0.25
+    device.get_button.return_value = 1
+    with patch("app.pygame", pygame):
+        widget = JoystickTab()
+        assert "Flight stick" in widget.device_combo.currentText()
+        assert "hardware-guid" in widget.device_details.text()
+        widget.connect_local_joystick()
+        timer = widget._timer
+        assert widget.connect_btn.text() == "Stop monitoring"
+        before = widget.log.toPlainText()
+        widget.read_joystick_state()
+        assert "+0.250" in widget.live_state.toPlainText()
+        assert widget.log.toPlainText() == before
+        widget.connect_local_joystick()
+        assert not timer.isActive()
+        assert widget._current_joystick is None
+        assert widget.connect_btn.text() == "Start monitoring"
+        assert widget.device_combo.isEnabled()
+        widget.connect_local_joystick()
+        assert widget._timer is timer
+        widget.stop_monitoring()
+        device.get_instance_id.return_value = 99
+        widget.connect_local_joystick()
+        assert widget.monitor_status.text() == "Disconnected"
+        assert widget._current_joystick is None
+    widget.deleteLater()

@@ -292,6 +292,16 @@ class JoystickTab(QWidget):
         self.device_combo.setMinimumContentsLength(24)
         self.device_combo.addItem("No joysticks detected")
         form.addRow("Local joystick:", self.device_combo)
+        self.device_details = QLabel("No controller selected")
+        self.device_details.setWordWrap(True)
+        self.device_details.setTextFormat(Qt.TextFormat.PlainText)
+        self.device_details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        form.addRow("Controller details:", self.device_details)
+        self.device_combo.currentIndexChanged.connect(self._show_device_details)
+        hint = QLabel("SDL indices are local to this monitor and may differ from game numbering. "
+                      "Hardware GUIDs can be identical for controllers of the same model.")
+        hint.setWordWrap(True)
+        form.addRow(hint)
         root.addWidget(panel)
         self.monitor_status = QLabel("Not monitoring")
         root.addWidget(self.monitor_status)
@@ -310,6 +320,11 @@ class JoystickTab(QWidget):
         buttons_row.addWidget(refresh_btn)
         buttons_row.addStretch(1)
         root.addLayout(buttons_row)
+        self.live_state = QTextEdit()
+        self.live_state.setReadOnly(True)
+        self.live_state.setPlaceholderText("Start monitoring to see live axes, buttons and hats.")
+        root.addWidget(QLabel("Live state"))
+        root.addWidget(self.live_state, 2)
         root.addWidget(QLabel("Joystick activity"))
         root.addWidget(self.log, 1)
 
@@ -322,66 +337,7 @@ class JoystickTab(QWidget):
         self.log.setPlainText("\n".join(self._log_buffer))
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
 
-    def refresh_devices(self) -> None:
-        if self._timer is not None:
-            self._timer.stop()
-        if self._current_joystick is not None:
-            try:
-                self._current_joystick.quit()
-            except pygame.error:
-                pass
-            self._current_joystick = None
-        self.monitor_status.setText("Not monitoring")
-        if pygame is None:
-            self.device_combo.clear()
-            self.device_combo.addItem("PyGame not installed")
-            self.log_message("PyGame is not installed. Install it with: pip install pygame PyQt6")
-            return
-
-        pygame.init()
-        pygame.joystick.init()
-        count = pygame.joystick.get_count()
-        self._devices = [f"Joystick {idx}" for idx in range(count)]
-
-        self.device_combo.clear()
-        if not self._devices:
-            self.device_combo.addItem("No joysticks detected")
-            self.log_message("No joysticks were detected on this machine.")
-            return
-
-        for device in self._devices:
-            self.device_combo.addItem(device)
-        self.log_message(f"Detected {count} joystick(s).")
-
-    def connect_local_joystick(self) -> None:
-        if pygame is None:
-            QMessageBox.critical(self, "Error", "PyGame is not installed.")
-            return
-
-        idx = self.device_combo.currentIndex()
-        if idx < 0 or idx >= len(self._devices):
-            QMessageBox.warning(self, "Warning", "Select a valid joystick.")
-            return
-
-        try:
-            joystick = pygame.joystick.Joystick(idx)
-            joystick.init()
-        except pygame.error:
-            self._disconnect_monitor()
-            return
-        self._current_joystick = joystick
-        self.monitor_status.setText("Monitoring")
-
-        self.log_message(f"Connected to {self._devices[idx]}.")
-
-        if self._timer is not None:
-            self._timer.stop()
-
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self.read_joystick_state)
-        self._timer.start(20)
-
-    def _disconnect_monitor(self):
+    def stop_monitoring(self, *, announce=True):
         if self._timer is not None:
             self._timer.stop()
         joystick = self._current_joystick
@@ -391,6 +347,88 @@ class JoystickTab(QWidget):
                 joystick.quit()
             except pygame.error:
                 pass
+        self.connect_btn.setText("Start monitoring")
+        self.device_combo.setEnabled(True)
+        self.monitor_status.setText("Not monitoring")
+        if announce and joystick is not None:
+            self.log_message("Monitoring stopped.")
+
+    def _show_device_details(self):
+        info = self.device_combo.currentData()
+        self.device_details.setText(info["details"] if info else "No controller selected")
+
+    def refresh_devices(self) -> None:
+        self.stop_monitoring(announce=False)
+        self._devices = []
+        self.device_combo.clear()
+        self.live_state.setPlainText("")
+        self.connect_btn.setEnabled(False)
+        if pygame is None:
+            self.device_combo.addItem("PyGame not installed")
+            self.log_message("PyGame is not installed. Install it with: pip install pygame PyQt6")
+            return
+        try:
+            pygame.init()
+            pygame.joystick.init()
+            pygame.event.pump()
+            for idx in range(pygame.joystick.get_count()):
+                joystick = None
+                try:
+                    joystick = pygame.joystick.Joystick(idx)
+                    joystick.init()
+                    name = joystick.get_name()
+                    instance = joystick.get_instance_id()
+                    details = (f"SDL index: {idx} | Session instance: {instance}\n"
+                               f"Hardware GUID: {joystick.get_guid()}\n"
+                               f"Axes: {joystick.get_numaxes()} | Buttons: {joystick.get_numbuttons()} | "
+                               f"Hats: {joystick.get_numhats()} | Power: {joystick.get_power_level()}")
+                    self._devices.append(name)
+                    self.device_combo.addItem(f"{idx} - {name}",
+                        {"index": idx, "instance": instance, "details": details})
+                except pygame.error:
+                    self.log_message(f"Controller {idx} became unavailable. Refresh to try again.")
+                finally:
+                    if joystick is not None:
+                        try:
+                            joystick.quit()
+                        except pygame.error:
+                            pass
+        except pygame.error as exc:
+            self.log_message(f"Unable to enumerate controllers: {exc}")
+        if not self._devices:
+            self.device_combo.addItem("No joysticks detected")
+        self.connect_btn.setEnabled(bool(self._devices))
+        self._show_device_details()
+        self.log_message(f"Detected {len(self._devices)} joystick(s).")
+
+    def connect_local_joystick(self) -> None:
+        if self._current_joystick is not None:
+            self.stop_monitoring()
+            return
+        info = self.device_combo.currentData()
+        if pygame is None or not info:
+            return
+        try:
+            joystick = pygame.joystick.Joystick(info["index"])
+            self._current_joystick = joystick
+            joystick.init()
+            if joystick.get_instance_id() != info["instance"]:
+                raise pygame.error("Controller order changed")
+        except pygame.error:
+            self._disconnect_monitor()
+            return
+        self.monitor_status.setText("Monitoring")
+        self.connect_btn.setText("Stop monitoring")
+        self.device_combo.setEnabled(False)
+        self.log_message(f"Monitoring {self.device_combo.currentText()}.")
+        if self._timer is None:
+            self._timer = QTimer(self)
+            self._timer.timeout.connect(self.read_joystick_state)
+        self._timer.start(20)
+
+    def _disconnect_monitor(self):
+        self.stop_monitoring(announce=False)
+        self.connect_btn.setEnabled(False)
         self.monitor_status.setText("Disconnected")
         self.log_message("Disconnected. Refresh controllers before starting monitoring again.")
 
@@ -412,8 +450,11 @@ class JoystickTab(QWidget):
             return
 
         state = JoystickState(axes=axes, buttons=buttons, hats=hats)
-        packet = JoystickPacket.from_state(state)
-        self.log_message(f"Axes={axes} | Buttons={buttons} | Hats={hats} | Packet={packet}")
+        text = ("Axes: " + " | ".join(f"{i}: {value:+.3f}" for i, value in enumerate(state.axes))
+                + "\nPressed buttons (0-based): " + (", ".join(str(i) for i, pressed in enumerate(state.buttons) if pressed) or "None")
+                + "\nHats: " + " | ".join(f"{i}: {value}" for i, value in enumerate(state.hats)))
+        if self.live_state.toPlainText() != text:
+            self.live_state.setPlainText(text)
 
 
 class UsbipJoystickBridgeApp(QMainWindow):

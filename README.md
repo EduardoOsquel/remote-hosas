@@ -98,7 +98,7 @@ For errors, open **Management > Export diagnostics**. The export includes comman
 
 ### Joystick
 
-Refresh controllers, select a local or imported joystick, and start monitoring axes, buttons and hats. Readings refresh every 20 ms. Disconnection stops monitoring and shows **Disconnected** instead of repeatedly logging errors. Refresh and start again after reconnecting. The tab does not implement remapping, virtual controller emulation, or its own network transport.
+Refresh controllers, select a local or imported joystick, and start monitoring axes, buttons and hats. The same button stops monitoring. Readings refresh every 20 ms in a live panel without adding samples to the activity log. Controller details include the device name, SDL index, session instance, hardware GUID, power status and axis/button/hat counts. SDL indices are not guaranteed to match game numbering, and identical models may share a hardware GUID. Disconnection stops monitoring and shows **Disconnected** instead of repeatedly logging errors. Refresh and start again after reconnecting. The tab does not implement remapping, virtual controller emulation, or its own network transport.
 
 ## System tray and background behavior
 
