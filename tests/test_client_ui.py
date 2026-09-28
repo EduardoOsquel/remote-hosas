@@ -37,6 +37,30 @@ def simulate(widget, output):
     return patch.object(widget, "_run", side_effect=run)
 
 
+def test_double_click_connects_and_disconnects(client):
+    from usbip_manager import parse_imported_devices
+    _, widget = client
+    widget.host_input.setText("host-pc")
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    with patch.object(widget, "_run") as run:
+        widget.device_table.cellDoubleClicked.emit(0, 0)
+        assert "attach" in run.call_args.args[1]
+    widget._set_imported(parse_imported_devices(IMPORTED))
+    with patch.object(widget, "_run") as run:
+        widget.device_table.cellDoubleClicked.emit(0, 1)
+        assert "detach" in run.call_args.args[1]
+        run.reset_mock()
+        widget.connected_table.cellDoubleClicked.emit(0, 0)
+        assert "detach" in run.call_args.args[1]
+        widget._process = object()
+        widget._update_controls()
+        run.reset_mock()
+        widget.connected_table.cellDoubleClicked.emit(0, 0)
+        run.assert_not_called()
+        widget._process = None
+
+
 def test_client_starts_without_fake_devices_or_ports(client):
     _, widget = client
     assert widget.tcp_port_input.value() == 3240
@@ -195,7 +219,9 @@ def test_refresh_after_action_checks_local_ports_then_remote_exports(client):
         widget._refresh_after_action()
     assert commands == [["usbip", "port"], ["usbip", "--tcp-port=3240", "list", "-r", "host-pc"]]
     assert widget.port_input.currentData() == 7
-    assert widget.device_combo.currentData() == "1-3"
+    assert widget.device_combo.currentData() is None
+    assert widget.connected_table.selectedItems()
+    assert widget.device_table.item(0, 2).text() == "1-3"
 
 
 def test_shutdown_command_reports_lock_conflict(client):
@@ -340,3 +366,53 @@ def test_manual_remote_refresh_keeps_rows_and_details_until_results(client):
     run.call_args.args[2](REMOTE)
     assert widget.device_table.item(0, 0) is item
     assert widget.remote_details.text() == before
+
+
+def test_old_query_cannot_repopulate_or_clear_new_host(client):
+    _, widget = client
+    widget.host_input.setText("old-host")
+    with patch.object(widget, "_run") as run:
+        widget.refresh_remote_devices()
+    old_success = run.call_args.args[2]
+    old_failure = run.call_args.kwargs["on_failure"]
+    widget.host_input.setText("new-host")
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    old_failure()
+    assert widget._listed_endpoint == ("new-host", 3240)
+    old_success("2-1 : Wrong device (1111:2222)")
+    assert widget.devices[0].busid == "1-3"
+    widget.host_input.setText("old-host")
+    old_success(REMOTE)
+    assert widget.devices == []
+    assert "Remote joystick" not in widget.remote_details.text()
+
+
+def test_current_background_failure_clears_remote_but_keeps_imports(client):
+    from usbip_manager import ImportedDevice
+    _, widget = client
+    widget.host_input.setText("host-pc")
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    widget._set_imported([ImportedDevice(7, "Stick", "another-host:3240/2-1")])
+    widget.gate.background = True
+    widget.gate.starting_background = True
+    with patch.object(widget, "_run") as run:
+        widget.refresh_remote_devices()
+    widget.gate.starting_background = False
+    run.call_args.kwargs["on_failure"]()
+    widget.gate.background = False
+    assert widget.device_table.rowCount() == 0
+    assert widget.connected_table.rowCount() == 1
+
+
+def test_background_lookup_skips_host_editing(client):
+    _, widget = client
+    widget.host_input.setText("127.0.0.")
+    widget.gate.background = True
+    widget.gate.starting_background = True
+    with patch.object(widget.host_input, "hasFocus", return_value=True), patch.object(widget, "_run") as run:
+        widget.refresh_remote_devices()
+    run.assert_not_called()
+    widget.gate.background = False
+    widget.gate.starting_background = False

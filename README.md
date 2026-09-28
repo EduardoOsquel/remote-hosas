@@ -182,8 +182,7 @@ controller. Identification selects it without starting monitoring. Small axis
 jitter is ignored; multiple active devices require another attempt. Identification
 can be cancelled and ends after 15 seconds without input. Refresh stops it too.
 
-Enter an alias such as Left stick, Right stick or Throttle and press Enter or
-leave the field. Aliases are local labels and do not change Windows or game
+Enter an alias such as Left stick, Right stick or Throttle and click Apply alias or press Enter. Aliases are local labels and do not change Windows or game
 assignments. They are saved by hardware GUID. When identical GUIDs are detected,
 aliases are only held for the current connection session; model GUIDs are not
 unique physical-device serial numbers. Recheck labels when replacing a controller
@@ -233,3 +232,5 @@ the host firewall only for authorized clients. The app does not change firewall
 rules. Add 127.0.0.1 explicitly for local service tests. IPv6 clients and CIDR
 ranges are not supported by this first version. Service status reports Disabled,
 Listening or a startup error. Settings are saved per Windows user.
+
+Joystick controllers are selected from a Device / Alias / SDL index table. Apply alias saves the name explicitly; refreshing preserves the selected connected instance and saved aliases. Identical models keep distinct aliases for the current connection session.

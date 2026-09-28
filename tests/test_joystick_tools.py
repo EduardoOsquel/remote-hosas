@@ -93,3 +93,79 @@ def test_visual_indicators_update_without_rebuilding(controllers):
     assert bar.value() == 2000
     assert "ON" in widget.button_lights[0].text()
     assert "Up Left" in widget.hat_labels[0].text()
+
+
+@pytest.mark.parametrize("axes_count,buttons_count", [(4, 16), (5, 14), (8, 14)])
+def test_hotas_inputs_reach_every_indicator(controllers, axes_count, buttons_count):
+    widget, devices, backend = controllers
+    device = devices[0]
+    device.get_numaxes.return_value = axes_count
+    device.get_numbuttons.return_value = buttons_count
+    axes = [-1 + 2 * i / (axes_count - 1) for i in range(axes_count)]
+    device.get_axis.side_effect = lambda i: axes[i]
+    widget.connect_local_joystick()
+    widget._timer.stop()
+    for pressed in range(buttons_count):
+        device.get_button.side_effect = lambda i: i == pressed
+        widget.read_joystick_state()
+        assert len(widget.axis_bars) == axes_count
+        assert len(widget.button_lights) == buttons_count
+        assert [b.value() for b in widget.axis_bars] == [round((v + 1) * 1000) for v in axes]
+        assert ["ON" in b.text() for b in widget.button_lights] == [i == pressed for i in range(buttons_count)]
+    bars = list(widget.axis_bars)
+    for x, y, direction in [(0, 0, "Centered"), (0, 1, "Up"), (1, 1, "Up Right"),
+                            (1, 0, "Right"), (1, -1, "Down Right"), (0, -1, "Down"),
+                            (-1, -1, "Down Left"), (-1, 0, "Left"), (-1, 1, "Up Left")]:
+        device.get_hat.return_value = (x, y)
+        widget.read_joystick_state()
+        assert widget.hat_labels[0].text() == f"Hat 0: {direction}"
+        assert widget.axis_bars == bars
+    widget.show()
+    QApplication.processEvents()
+    scroll = widget.live_tabs.widget(0)
+    assert scroll.verticalScrollBar().maximum() > 0
+    assert all(bar.height() >= 24 for bar in bars)
+
+
+def test_apply_alias_survives_refresh_with_selected_second_controller(controllers):
+    widget, devices, backend = controllers
+    widget.controller_table.selectRow(1)
+    widget.alias_edit.setText("Right stick")
+    widget.apply_alias_btn.click()
+    for _ in range(3):
+        widget.refresh_devices()
+        assert widget.device_combo.currentData()["instance"] == 11
+        assert widget.controller_table.currentRow() == 1
+        assert widget.alias_edit.text() == "Right stick"
+        assert widget.controller_table.item(1, 1).text() == "Right stick"
+    assert widget.alias_settings.value("joysticks/aliases/guid1") == "Right stick"
+
+
+def test_alias_save_updates_existing_cell_only(controllers):
+    widget, devices, backend = controllers
+    table = widget.controller_table
+    items = [[table.item(r, c) for c in range(3)] for r in range(table.rowCount())]
+    widget.render_indicators([0.5], [True], [(0, 0)])
+    bar = widget.axis_bars[0]
+    for alias, save in (("Left", widget.apply_alias_btn.click),
+                        ("Flight stick", widget.alias_edit.returnPressed.emit)):
+        widget.alias_edit.setText(alias)
+        save()
+        assert table.item(0, 1).text() == alias
+        assert widget.axis_bars[0] is bar
+        assert all(table.item(r, c) is item for r, row in enumerate(items)
+                   for c, item in enumerate(row))
+
+
+def test_identical_controller_aliases_survive_refresh_without_overwriting(controllers):
+    widget, devices, backend = controllers
+    devices[1].get_guid.return_value = "guid0"
+    widget.refresh_devices()
+    for row, alias in enumerate(("Left", "Right")):
+        widget.controller_table.selectRow(row)
+        widget.alias_edit.setText(alias)
+        widget.apply_alias_btn.click()
+    widget.refresh_devices()
+    assert widget.controller_table.item(0, 1).text() == "Left"
+    assert widget.controller_table.item(1, 1).text() == "Right"
+    assert widget.alias_edit.text() == "Right"

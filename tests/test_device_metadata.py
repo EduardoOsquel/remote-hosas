@@ -181,3 +181,15 @@ def test_discovered_ip_requires_consent_and_saves_only_access(tmp_path):
     assert widget._access_dialog is None
     service.stop()
     widget.deleteLater()
+
+
+def test_loopback_does_not_prompt_for_remote_authorization(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    settings = QSettings(str(tmp_path / "loopback.ini"), QSettings.Format.IniFormat)
+    service = MetadataService(lambda: [])
+    widget = SettingsTab(settings, service)
+    for host in ("127.0.0.1", "127.0.0.5", "127.255.255.254"):
+        widget.offer_host_access(host)
+        assert widget._access_dialog is None
+    widget.deleteLater()
+    service.stop()

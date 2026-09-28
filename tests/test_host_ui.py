@@ -47,6 +47,21 @@ def host():
         application.processEvents()
 
 
+def test_double_click_uses_available_sharing_action(host):
+    _, widget, _ = host
+    with patch.object(widget, "run_command") as run:
+        widget.device_table.cellDoubleClicked.emit(0, 2)
+        assert "bind" in run.call_args.args[1]
+        widget.devices[0].state = "Shared"
+        widget.device_table.cellDoubleClicked.emit(0, 2)
+        assert "unbind" in run.call_args.args[1]
+        widget._worker = object()
+        run.reset_mock()
+        widget.device_table.cellDoubleClicked.emit(0, 2)
+        run.assert_not_called()
+        widget._worker = None
+
+
 def test_refresh_fills_available_width_after_maximizing(host):
     application, widget, command = host
     widget.showMaximized()

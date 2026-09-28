@@ -238,6 +238,8 @@ class ClientModeTab(ClientDevices, QWidget):
 
     @defer_background_action
     def refresh_remote_devices(self):
+        if self.gate.background and (self.host_input.hasFocus() or self.tcp_port_input.hasFocus()):
+            return
         if self.is_busy:
             return
         host, tcp_port = self._endpoint()

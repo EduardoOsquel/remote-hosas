@@ -97,6 +97,7 @@ class HostModeTab(QWidget):
         header.moveSection(header.visualIndex(3), 1)
         self.device_table.setColumnHidden(1, True)
         self.device_table.itemSelectionChanged.connect(self._update_controls)
+        self.device_table.cellDoubleClicked.connect(self._activate_device)
         self.device_table.ensurePolished()
         self.device_table.setFixedHeight(self.device_table.horizontalHeader().sizeHint().height()
             + 5 * self.device_table.verticalHeader().defaultSectionSize() + 2 * self.device_table.frameWidth())
@@ -267,6 +268,14 @@ class HostModeTab(QWidget):
         self.run_command("List USB devices", ["usbipd", "list"])
 
     @defer_background_action
+    def _activate_device(self, row, column):
+        self.device_table.selectRow(row)
+        self._update_controls()
+        if self.unbind_btn.isEnabled():
+            self.unbind_btn.click()
+        elif self.bind_btn.isEnabled():
+            self.bind_btn.click()
+
     def bind_selected_device(self) -> None:
         idx = self.selected_index()
         if idx < 0 or idx >= len(self.devices):
@@ -302,19 +311,30 @@ class JoystickTab(JoystickTools, QWidget):
         self._timer: Optional[QTimer] = None
         self._log_buffer: List[str] = []
 
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = ContentScrollArea()
+        content = QWidget()
+        root = QVBoxLayout(content)
         setup_page(root)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
 
         note = QLabel("Local controller monitor. Attach a remote device in Client Mode first, then refresh controllers here.")
         note.setWordWrap(True)
         root.addWidget(note)
         panel = QGroupBox("Local controller")
+        panel.setStyleSheet("QGroupBox { padding: 0px; }")
         form = QFormLayout(panel)
+        form.setContentsMargins(12, 24, 12, 12)
+        form.setVerticalSpacing(10)
         self.device_combo = QComboBox()
         self.device_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.device_combo.setMinimumContentsLength(24)
         self.device_combo.addItem("No joysticks detected")
-        form.addRow("Local joystick:", self.device_combo)
+        self.device_combo.setParent(self)
+        self.device_combo.hide()
         self.device_details = QLabel("No controller selected")
         self.device_details.setWordWrap(True)
         self.device_details.setTextFormat(Qt.TextFormat.PlainText)
@@ -346,10 +366,13 @@ class JoystickTab(JoystickTools, QWidget):
         self.live_state = QTextEdit()
         self.live_state.setReadOnly(True)
         self.live_state.setPlaceholderText("Start monitoring to see live axes, buttons and hats.")
-        root.addWidget(QLabel("Live state"))
-        root.addWidget(self.live_state, 2)
-        root.addWidget(QLabel("Joystick activity"))
-        root.addWidget(self.log, 1)
+        self.live_tabs = QTabWidget()
+        self.live_tabs.setFixedHeight(190)
+        self.live_tabs.addTab(self.live_state, "Values")
+        root.addWidget(self.live_tabs)
+        self.activity_panel = ActivityPanel(self.log)
+        self.activity_panel.summary.hide()
+        root.addWidget(self.activity_panel)
 
         self._pygame = pygame
         self.setup_tools(form, root, buttons_row, QSettings("RemoteHosas", "USBIPBridge"))
@@ -374,6 +397,7 @@ class JoystickTab(JoystickTools, QWidget):
                 pass
         self.connect_btn.setText("Start monitoring")
         self.device_combo.setEnabled(True)
+        self.controller_table.setEnabled(True)
         self.monitor_status.setText("Not monitoring")
         if announce and joystick is not None:
             self.log_message("Monitoring stopped.")
@@ -384,15 +408,20 @@ class JoystickTab(JoystickTools, QWidget):
         self.show_alias()
 
     def refresh_devices(self) -> None:
+        previous = self.device_combo.currentData()
         self.cancel_identification()
         self.stop_monitoring(announce=False)
         self._devices = []
+        self.device_combo.blockSignals(True)
         self.device_combo.clear()
         self.live_state.setPlainText("")
         self.connect_btn.setEnabled(False)
         if pygame is None:
             self.identify_btn.setEnabled(False)
             self.device_combo.addItem("PyGame not installed")
+            self.device_combo.blockSignals(False)
+            self.refresh_controller_table()
+            self._show_device_details()
             self.log_message("PyGame is not installed. Install it with: pip install pygame PyQt6")
             return
         try:
@@ -428,6 +457,13 @@ class JoystickTab(JoystickTools, QWidget):
             self.device_combo.addItem("No joysticks detected")
         self.connect_btn.setEnabled(bool(self._devices))
         self.prepare_aliases()
+        if previous:
+            for index in range(self.device_combo.count()):
+                info = self.device_combo.itemData(index)
+                if info and info["instance"] == previous["instance"] and info["guid"] == previous["guid"]:
+                    self.device_combo.setCurrentIndex(index)
+                    break
+        self.device_combo.blockSignals(False)
         self._show_device_details()
         self.log_message(f"Detected {len(self._devices)} joystick(s).")
 
@@ -450,6 +486,7 @@ class JoystickTab(JoystickTools, QWidget):
         self.monitor_status.setText("Monitoring")
         self.connect_btn.setText("Stop monitoring")
         self.device_combo.setEnabled(False)
+        self.controller_table.setEnabled(False)
         self.log_message(f"Monitoring {self.device_combo.currentText()}.")
         if self._timer is None:
             self._timer = QTimer(self)

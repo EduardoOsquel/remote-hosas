@@ -1,8 +1,9 @@
 """Controller aliases, live indicators and deliberate input identification."""
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QLabel,
-    QProgressBar, QScrollArea, QLineEdit)
+    QProgressBar, QScrollArea, QLineEdit, QHBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QLayout)
 from ui_theme import make_button
+from ui_icons import line_icon
 
 
 class JoystickTools:
@@ -16,8 +17,33 @@ class JoystickTools:
         self.alias_edit = QLineEdit()
         self.alias_edit.setMaxLength(60)
         self.alias_edit.setPlaceholderText("Left stick, Right stick, Throttle...")
-        self.alias_edit.editingFinished.connect(self.save_alias)
-        form.addRow("Alias:", self.alias_edit)
+        self.alias_edit.returnPressed.connect(self.save_alias)
+        alias_row = QHBoxLayout()
+        alias_row.addWidget(self.alias_edit, 1)
+        self.apply_alias_btn = make_button("Apply", "save")
+        self.apply_alias_btn.clicked.connect(self.save_alias)
+        alias_row.addWidget(self.apply_alias_btn)
+        form.addRow("Alias:", alias_row)
+        self.controller_table = QTableWidget(0, 3)
+        table = self.controller_table
+        table.setHorizontalHeaderLabels(["DEVICE", "ALIAS", "SDL INDEX"])
+        table.verticalHeader().hide()
+        table.verticalHeader().setDefaultSectionSize(38)
+        table.setSelectionBehavior(table.SelectionBehavior.SelectRows)
+        table.setSelectionMode(table.SelectionMode.SingleSelection)
+        table.setEditTriggers(table.EditTrigger.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        table.setShowGrid(False)
+        table.horizontalHeader().setStretchLastSection(False)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        for col in range(3):
+            table.horizontalHeaderItem(col).setTextAlignment(Qt.AlignmentFlag.AlignCenter if col == 2 else Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        table.ensurePolished()
+        table.setFixedHeight(table.horizontalHeader().sizeHint().height() + 4 * 38 + 2 * table.frameWidth())
+        table.itemSelectionChanged.connect(self.select_controller_row)
+        root.insertWidget(1, table)
         self.alias_note = QLabel()
         self.alias_note.setWordWrap(True)
         form.addRow(self.alias_note)
@@ -28,10 +54,11 @@ class JoystickTools:
         scroll.setWidgetResizable(True)
         self.indicator_panel = QWidget()
         self.indicator_layout = QVBoxLayout(self.indicator_panel)
+        self.indicator_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.indicator_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         scroll.setWidget(self.indicator_panel)
-        root.insertWidget(root.indexOf(self.live_state) - 1, scroll, 3)
-        self.live_state.setMaximumHeight(90)
-        self.log.setMaximumHeight(120)
+        self.live_tabs.insertTab(0, scroll, "Indicators")
+        self.live_tabs.setCurrentIndex(0)
         self.axis_bars, self.button_lights, self.hat_labels = [], [], []
         self.visual_shape = None
 
@@ -46,6 +73,7 @@ class JoystickTools:
             self.device_combo.setItemData(i, info)
             self.update_alias_label(i)
         self.identify_btn.setEnabled(bool(infos))
+        self.refresh_controller_table()
         self.show_alias()
 
     def get_alias(self, info):
@@ -64,6 +92,11 @@ class JoystickTools:
             return
         info = self.device_combo.currentData()
         self.alias_edit.setEnabled(bool(info))
+        self.apply_alias_btn.setEnabled(bool(info))
+        self.controller_table.blockSignals(True)
+        if info and self.device_combo.currentIndex() < self.controller_table.rowCount():
+            self.controller_table.selectRow(self.device_combo.currentIndex())
+        self.controller_table.blockSignals(False)
         self.alias_edit.setText(self.get_alias(info) if info else "")
         self.alias_note.setText("Identical models detected: aliases apply only to this connection session."
             if info and info.get("ambiguous") else "Alias saved for this hardware GUID; does not rename the device in games.")
@@ -78,7 +111,39 @@ class JoystickTools:
             self.session_aliases[info["instance"]] = alias
         else:
             self.alias_settings.setValue(self.alias_key(info), alias)
+            self.alias_settings.sync()
+            if self.alias_settings.status() != self.alias_settings.Status.NoError:
+                self.log_message("Unable to save alias. Check your profile permissions.")
+                return
         self.update_alias_label(self.device_combo.currentIndex())
+        item = self.controller_table.item(self.device_combo.currentIndex(), 1)
+        if item is not None:
+            item.setText(alias)
+            item.setToolTip(alias)
+        self.log_message("Alias saved." if alias else "Alias removed.")
+
+    def select_controller_row(self):
+        row = self.controller_table.currentRow()
+        if self.controller_table.selectedItems() and row >= 0:
+            self.device_combo.setCurrentIndex(row)
+
+    def refresh_controller_table(self):
+        table = self.controller_table
+        table.blockSignals(True)
+        infos = [self.device_combo.itemData(i) for i in range(self.device_combo.count())]
+        infos = [info for info in infos if info]
+        table.setRowCount(len(infos))
+        for row, info in enumerate(infos):
+            for col, text in enumerate((info["name"], self.get_alias(info), str(info["index"]))):
+                item = QTableWidgetItem(text)
+                item.setToolTip(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if col == 2 else Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                if col == 0:
+                    item.setIcon(line_icon("gaming"))
+                table.setItem(row, col, item)
+        if infos:
+            table.selectRow(max(0, self.device_combo.currentIndex()))
+        table.blockSignals(False)
 
     def clear_indicators(self):
         if not hasattr(self, "indicator_layout"):
@@ -86,17 +151,22 @@ class JoystickTools:
         while self.indicator_layout.count():
             item = self.indicator_layout.takeAt(0)
             if item.widget():
+                item.widget().hide()
                 item.widget().deleteLater()
         self.visual_shape = None
         self.axis_bars, self.button_lights, self.hat_labels = [], [], []
+        self.indicator_placeholder = QLabel("Start monitoring to see axes, buttons and hats.")
+        self.indicator_layout.addWidget(self.indicator_placeholder)
 
     def render_indicators(self, axes, buttons, hats):
         shape = (len(axes), len(buttons), len(hats))
         if shape != self.visual_shape:
             self.clear_indicators()
+            self.indicator_placeholder.hide()
             self.visual_shape = shape
             for i in range(len(axes)):
                 bar = QProgressBar()
+                bar.setMinimumHeight(24)
                 bar.setRange(0, 2000)
                 self.indicator_layout.addWidget(bar)
                 self.axis_bars.append(bar)
@@ -104,6 +174,7 @@ class JoystickTools:
             grid = QGridLayout(panel)
             for i in range(len(buttons)):
                 light = QLabel()
+                light.setMinimumHeight(28)
                 light.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 grid.addWidget(light, i // 8, i % 8)
                 self.button_lights.append(light)
@@ -136,6 +207,7 @@ class JoystickTools:
         self.identifying = []
         self.identify_btn.setText("Identify controller")
         self.device_combo.setEnabled(True)
+        self.controller_table.setEnabled(True)
         self.connect_btn.setEnabled(bool(self._devices))
 
     def identify_controller(self):
@@ -163,6 +235,7 @@ class JoystickTools:
             return
         self.connect_btn.setEnabled(False)
         self.device_combo.setEnabled(False)
+        self.controller_table.setEnabled(False)
         self.identify_btn.setText("Cancel identification")
         self.monitor_status.setText("Move an axis or press a button on one controller (15 seconds).")
         self.identify_timer.start(50)

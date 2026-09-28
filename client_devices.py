@@ -40,6 +40,7 @@ class ClientDevices:
         for i in range(3):
             table.horizontalHeaderItem(i).setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter if i == 0 else Qt.AlignmentFlag.AlignCenter)
         table.itemSelectionChanged.connect(self.table_selected)
+        table.cellDoubleClicked.connect(self.activate_remote_device)
         self.connected_table = QTableWidget(0, 3)
         connected = self.connected_table
         connected.setHorizontalHeaderLabels(["DEVICE", "HOST", "BUSID"])
@@ -57,8 +58,27 @@ class ClientDevices:
         connected.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         connected.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         connected.itemSelectionChanged.connect(self.connected_selected)
+        connected.cellDoubleClicked.connect(self.activate_connected_device)
         self._selected_connection = None
         return table
+
+    def activate_remote_device(self, row, column):
+        if self._building_table or not 0 <= row < len(self._table_rows):
+            return
+        self.device_table.selectRow(row)
+        self.table_selected()
+        _, _, local = self._table_rows[row]
+        button = self.detach_btn if local else self.attach_btn
+        if button.isEnabled():
+            button.click()
+
+    def activate_connected_device(self, row, column):
+        if self._building_table or not 0 <= row < len(self.imported_devices):
+            return
+        self.connected_table.selectRow(row)
+        self.connected_selected()
+        if self.detach_btn.isEnabled():
+            self.detach_btn.click()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -160,6 +180,8 @@ class ClientDevices:
             if self._selected_connection == (device.port, device.location):
                 selected = i
         table.setFixedHeight(table.horizontalHeader().sizeHint().height() + 38 * max(1, min(3, len(self.imported_devices))) + 2 * table.frameWidth())
+        if selected < 0 and not self.devices and self.imported_devices:
+            selected = 0
         if selected >= 0:
             table.selectRow(selected)
         table.blockSignals(False)
