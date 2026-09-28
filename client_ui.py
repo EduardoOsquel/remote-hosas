@@ -249,7 +249,7 @@ class ClientModeTab(ClientDevices, QWidget):
         self._update_controls()
 
     @defer_background_action
-    def refresh_remote_devices(self):
+    def refresh_remote_devices(self, *, after_discovery=None):
         if self.gate.background and (self.host_input.hasFocus() or self.tcp_port_input.hasFocus()):
             return
         if self.is_busy:
@@ -265,16 +265,21 @@ class ClientModeTab(ClientDevices, QWidget):
         def failed():
             if generation == self._remote_generation and (host, tcp_port) == self._endpoint():
                 self._invalidate_remote()
+                self.remote_details.setText("Unable to query this host. Check the address, USB/IP service and network connection.")
         def listed(output):
             if generation != self._remote_generation or (host, tcp_port) != self._endpoint():
                 return
             devices = self.prefer_local_device_names(host, tcp_port, parse_remote_devices(output))
             if devices == self.devices and self._listed_endpoint == (host, tcp_port):
+                if not devices:
+                    self.remote_details.setText("No shared devices found on this host.")
                 if manual:
                     self.log(f"Detected {len(devices)} exportable USB device(s) on {host}:{tcp_port}.")
                     if devices:
                         self.host_discovered.emit(host)
                 self.retrieve_metadata(host, tcp_port)
+                if after_discovery:
+                    QTimer.singleShot(0, after_discovery)
                 return
             self.devices = devices
             self._listed_endpoint = (host, tcp_port)
@@ -292,6 +297,10 @@ class ClientModeTab(ClientDevices, QWidget):
             self.retrieve_metadata(host, tcp_port)
             if manual and devices:
                 self.host_discovered.emit(host)
+            if not devices:
+                self.remote_details.setText("No shared devices found on this host.")
+            if after_discovery:
+                QTimer.singleShot(0, after_discovery)
         self._run("List remote devices", build_usbip_list_command(host, tcp_port), listed,
                   on_failure=failed)
 
@@ -341,17 +350,51 @@ class ClientModeTab(ClientDevices, QWidget):
             return
         host, port = self._endpoint()
         if self.is_local_connection_target(host):
-            self.log("[ERROR] Connecting a shared USB device back to this PC is blocked.")
-            dialog = QMessageBox(QMessageBox.Icon.Warning, "Local connection blocked",
+            self._warn_local_connection()
+            return
+        from ipaddress import ip_address
+        try:
+            ip_address(host.strip().strip("[]"))
+        except ValueError:
+            if getattr(self, "_attach_lookup", None) is not None:
+                return
+            token = object()
+            self._attach_lookup = token
+            generation = self._remote_generation
+            def resolved(info):
+                from PyQt6 import sip
+                if sip.isdeleted(self):
+                    return
+                if self._attach_lookup is not token:
+                    return
+                self._attach_lookup = None
+                if (self.gate.shutting_down or generation != self._remote_generation
+                        or (host, port) != self._endpoint() or busid != self.device_combo.currentData()
+                        or self.is_busy or not self.gate.available(self)):
+                    return
+                if info is None or info.error() != QHostInfo.HostInfoError.NoError or not info.addresses():
+                    self.log("[ERROR] Unable to resolve the host. Connection cancelled.")
+                    return
+                if any(self.is_local_connection_target(a.toString()) for a in info.addresses()):
+                    self._warn_local_connection()
+                    return
+                self._run(f"Attach {busid} from {host}", build_usbip_attach_command(host, busid, port),
+                          after=self._refresh_after_action)
+            QHostInfo.lookupHost(host, resolved)
+            QTimer.singleShot(5000, lambda: resolved(None))
+            return
+        self._run(f"Attach {busid} from {host}", build_usbip_attach_command(host, busid, port),
+                  after=self._refresh_after_action)
+
+    def _warn_local_connection(self):
+        self.log("[ERROR] Connecting a shared USB device back to this PC is blocked.")
+        dialog = QMessageBox(QMessageBox.Icon.Warning, "Local connection blocked",
                 "This device is shared by this computer. Connecting it back to the same PC "
                 "through USB/IP is blocked to avoid device conflicts.\n\n"
                 "Use the device locally, or connect to it from another computer.",
                 QMessageBox.StandardButton.Ok, self)
-            dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-            dialog.open()
-            return
-        self._run(f"Attach {busid} from {host}", build_usbip_attach_command(host, busid, port),
-                  after=self._refresh_after_action)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.open()
 
     @staticmethod
     def is_local_connection_target(host):

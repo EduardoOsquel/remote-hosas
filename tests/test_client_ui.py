@@ -17,7 +17,14 @@ IMPORTED = "Port 07: device in use at full-speed\n  Remote joystick\n  -> usbip:
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    from PyQt6.QtNetwork import QHostInfo, QHostAddress
+    def lookup(host, callback):
+        info = QHostInfo()
+        info.setAddresses([QHostAddress("192.0.2.10")])
+        callback(info)
+        return 1
+    monkeypatch.setattr(QHostInfo, "lookupHost", lookup)
     application = QApplication.instance() or QApplication([])
     widget = ClientModeTab()
     yield application, widget
@@ -99,6 +106,29 @@ def test_local_interface_address_is_recognized():
     with patch("client_ui.QNetworkInterface.allAddresses", return_value=[QHostAddress("192.168.1.20")]):
         assert ClientModeTab.is_local_connection_target("192.168.1.20")
         assert not ClientModeTab.is_local_connection_target("192.168.1.21")
+
+
+@pytest.mark.parametrize("result", ["local", "error", "changed", "remote"])
+def test_dns_alias_validation_before_attach(client, result):
+    from PyQt6.QtNetwork import QHostInfo, QHostAddress
+    _, widget = client
+    widget.host_input.setText("alias.example")
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    callbacks = []
+    with patch("client_ui.QHostInfo.lookupHost", side_effect=lambda host, callback: callbacks.append(callback)), \
+            patch.object(widget, "_run") as run, patch("client_ui.QMessageBox.open") as warning:
+        widget.attach_selected_device()
+        run.assert_not_called()
+        info = QHostInfo()
+        info.setAddresses([QHostAddress("127.0.0.1" if result == "local" else "192.0.2.10")])
+        if result == "error":
+            info.setError(QHostInfo.HostInfoError.HostNotFound)
+        if result == "changed":
+            widget.host_input.setText("another.example")
+        callbacks[0](info)
+        assert run.call_count == (1 if result == "remote" else 0)
+        assert warning.call_count == (1 if result == "local" else 0)
 
 
 def test_client_starts_without_fake_devices_or_ports(client):

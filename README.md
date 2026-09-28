@@ -1,6 +1,6 @@
 # USB/IP + Joystick Bridge (RemoteHosas)
 
-A Windows desktop application for sharing USB devices between Windows PCs and monitoring local or imported joysticks. **v0.0.1** is the first public testing release. The interface and application messages are in English.
+A Windows desktop application for sharing USB devices between Windows PCs and monitoring local or imported joysticks. **v0.0.2** is the next testing release (source prepared; publication pending). The interface and application messages are in English.
 
 ![Application icon](assets/remote-hosas.png)
 
@@ -44,7 +44,7 @@ Use supported Windows versions for the upstream drivers. The included executable
 3. Click **List remote devices**, select the shared device, then **Attach / Connect**.
 4. Check the imported-device list and open the Windows application that will use the device.
 
-**Use this PC** selects `127.0.0.1` for local testing; it does not locate another computer. Changing the host or port clears the previous remote selection. The virtual hub port shown for imported devices is assigned by the client driver and is different from TCP 3240.
+The first run defaults to `127.0.0.1`; subsequent runs restore your saved host. Local discovery is allowed, but importing a device back into its own host is blocked. This includes loopback, local interface addresses, the computer name and DNS aliases resolving to local addresses. DNS checks are asynchronous and cancel the connection if resolution fails or takes longer than five seconds. Changing the host or port clears the previous remote selection. The virtual hub port shown for imported devices is assigned by the client driver and is different from TCP 3240.
 
 ### 3. Finish a session
 
@@ -234,3 +234,9 @@ ranges are not supported by this first version. Service status reports Disabled,
 Listening or a startup error. Settings are saved per Windows user.
 
 Joystick controllers are selected from a Device / Alias / SDL index table. Apply alias saves the name explicitly; refreshing preserves the selected connected instance and saved aliases. Identical models keep distinct aliases for the current connection session.
+
+## v0.0.2 connection checks
+
+Connecting from the tray first queries the selected host again. If the device is no longer shared, the list updates and no attach command is sent. Host changes invalidate cached localhost discovery without removing existing imports. Remote hosts are checked periodically while Client Mode is visible or manually with Refresh devices; changes are not pushed instantly between PCs. An empty successful query is distinguished from a failed host query.
+
+Before publishing, physical tests on two PCs and with T.16000M/TWCS hardware remain pending. Automated tests use simulated devices and do not certify driver or hardware compatibility.

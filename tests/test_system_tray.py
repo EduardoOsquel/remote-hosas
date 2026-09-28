@@ -134,6 +134,24 @@ def test_share_menus_filter_states_and_route_selected_busid(window):
         assert host.selected_busid() == "1-3"
 
 
+def test_tray_does_not_attach_device_removed_during_revalidation(window):
+    _, widget, _ = window
+    client, tray = widget.client_tab, widget.tray
+    client.host_input.setText("host-a")
+    client._listed_endpoint = client._endpoint()
+    client.device_combo.clear()
+    client.device_combo.addItem("Stick", "2-1")
+    callbacks = []
+    with patch.object(client, "refresh_remote_devices", side_effect=lambda **kw: callbacks.append(kw["after_discovery"])), \
+            patch.object(client, "attach_selected_device") as attach:
+        tray.connect_device("2-1", client._endpoint())
+        attach.assert_not_called()
+        client.device_combo.clear()
+        callbacks[0]()
+        attach.assert_not_called()
+        assert "no longer shared" in client.log_widget.toPlainText()
+
+
 def test_client_tray_actions_use_endpoint_and_virtual_port(window):
     from usbip_manager import UsbipDevice, ImportedDevice
     _, widget, _ = window
@@ -145,8 +163,10 @@ def test_client_tray_actions_use_endpoint_and_virtual_port(window):
     client.device_combo.addItem("Stick", "2-1")
     client._set_imported([ImportedDevice(7, "Stick", "host-a:3240/2-1")])
     tray.rebuild_devices()
-    with patch.object(client, "attach_selected_device") as attach:
+    with patch.object(client, "attach_selected_device") as attach, patch.object(
+            client, "refresh_remote_devices", side_effect=lambda **kw: kw["after_discovery"]()) as refresh:
         tray.connect_menu.actions()[1].trigger()
+        refresh.assert_called_once()
         attach.assert_called_once()
         tray.connect_device("2-1", ("other-host", 3240))
         attach.assert_called_once()

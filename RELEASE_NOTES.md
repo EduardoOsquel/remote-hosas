@@ -1,3 +1,19 @@
+# v0.0.2 - Prepared for testing (not yet published)
+
+- Clearer Host and Client tables, state-dependent double-click actions and separate connected-device tracking across hosts.
+- Collapsible activity logs, consistent status presentation and improved spacing.
+- Joystick controller table, explicit Apply alias, aliases retained on refresh, visual indicators and raw values in one panel.
+- Optional device-name metadata service with source-IP access controls; HTTP transport remains unchanged.
+- Self-connection protection, including asynchronous DNS alias checks with a five-second deadline.
+- Tray connection actions re-query the host before attaching; unavailable devices are removed from the refreshed list.
+- Local sharing changes invalidate stale Client/tray discovery; successful empty lists and failed queries have different messages.
+
+## Validation still required before publication
+
+- End-to-end tests on two Windows PCs, including network loss, USB removal and exit during an operation.
+- Physical T.16000M and TWCS monitoring tests. Automated input simulations are not hardware validation.
+- Build and smoke-test the release executable when requested. No installer or signing is included.
+
 # v0.0.1 — First public testing release
 
 Windows-to-Windows USB/IP sharing with a desktop interface and system tray controls.

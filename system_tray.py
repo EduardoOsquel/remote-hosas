@@ -202,8 +202,16 @@ class SystemTray(QObject):
         if index < 0:
             return
         def action():
-            client.device_combo.setCurrentIndex(index)
-            client.attach_selected_device()
+            def verified():
+                if endpoint != client._endpoint() or endpoint != client._listed_endpoint:
+                    return
+                current = client.device_combo.findData(busid)
+                if current < 0:
+                    client.log("[ERROR] This device is no longer shared by the host. The list has been updated.")
+                    return
+                client.device_combo.setCurrentIndex(current)
+                client.attach_selected_device()
+            client.refresh_remote_devices(after_discovery=verified)
         self._invoke(client, action)
 
     def disconnect_device(self, port, location):

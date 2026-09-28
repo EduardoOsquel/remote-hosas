@@ -34,7 +34,8 @@ def defer_background_action(method):
     """Keep user actions responsive without overlapping a background query."""
     from functools import wraps
     import inspect
-    positional_count = len(inspect.signature(method).parameters) - 1
+    positional_count = sum(p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                           for p in inspect.signature(method).parameters.values()) - 1
     @wraps(method)
     def wrapped(self, *args, **kwargs):
         args = args[:positional_count]
