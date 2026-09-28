@@ -1,8 +1,9 @@
 """Windows USB/IP client: remote exports and locally imported virtual ports."""
 
 from PyQt6.QtCore import Qt, pyqtSignal, QProcess, QTimer
+from PyQt6.QtNetwork import QHostInfo, QNetworkInterface
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-                            QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox, QTextEdit, QScrollArea)
+                            QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox, QTextEdit, QScrollArea, QMessageBox)
 
 from device_presentation import ContentScrollArea, ActivityPanel, details_label
 from ui_icons import line_icon, device_icon_kind
@@ -339,8 +340,38 @@ class ClientModeTab(ClientDevices, QWidget):
         if busid is None:
             return
         host, port = self._endpoint()
+        if self.is_local_connection_target(host):
+            self.log("[ERROR] Connecting a shared USB device back to this PC is blocked.")
+            dialog = QMessageBox(QMessageBox.Icon.Warning, "Local connection blocked",
+                "This device is shared by this computer. Connecting it back to the same PC "
+                "through USB/IP is blocked to avoid device conflicts.\n\n"
+                "Use the device locally, or connect to it from another computer.",
+                QMessageBox.StandardButton.Ok, self)
+            dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            dialog.open()
+            return
         self._run(f"Attach {busid} from {host}", build_usbip_attach_command(host, busid, port),
                   after=self._refresh_after_action)
+
+    @staticmethod
+    def is_local_connection_target(host):
+        from ipaddress import ip_address
+        name = host.strip().strip("[]").casefold().rstrip(".")
+        local_name = QHostInfo.localHostName().casefold().rstrip(".")
+        domain = QHostInfo.localDomainName().casefold().rstrip(".")
+        if name in {"localhost", "localhost.localdomain", local_name,
+                    f"{local_name}.{domain}" if domain else local_name}:
+            return True
+        def address(value):
+            parsed = ip_address(value.split("%", 1)[0])
+            return getattr(parsed, "ipv4_mapped", None) or parsed
+        try:
+            target = address(name)
+        except ValueError:
+            return False
+        if target.is_loopback or target.is_unspecified:
+            return True
+        return any(target == address(item.toString()) for item in QNetworkInterface.allAddresses())
 
     @defer_background_action
     def detach_selected_device(self):

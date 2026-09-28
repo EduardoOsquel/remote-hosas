@@ -81,6 +81,26 @@ def test_local_host_change_invalidates_only_local_discovery(client, host, invali
         assert not widget.attach_btn.isEnabled()
 
 
+@pytest.mark.parametrize("address", ["127.0.0.1", "127.0.0.5", "::1", "::ffff:127.0.0.1", "localhost"])
+def test_self_attach_is_blocked_without_running_usbip(client, address):
+    _, widget = client
+    widget.host_input.setText(address)
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    with patch.object(widget, "_run") as run, patch("client_ui.QMessageBox.open") as warning:
+        widget.attach_selected_device()
+        run.assert_not_called()
+        warning.assert_called_once()
+    assert "back to this PC is blocked" in widget.log_widget.toPlainText()
+
+
+def test_local_interface_address_is_recognized():
+    from PyQt6.QtNetwork import QHostAddress
+    with patch("client_ui.QNetworkInterface.allAddresses", return_value=[QHostAddress("192.168.1.20")]):
+        assert ClientModeTab.is_local_connection_target("192.168.1.20")
+        assert not ClientModeTab.is_local_connection_target("192.168.1.21")
+
+
 def test_client_starts_without_fake_devices_or_ports(client):
     _, widget = client
     assert widget.tcp_port_input.value() == 3240
