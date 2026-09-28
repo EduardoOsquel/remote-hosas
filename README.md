@@ -1,6 +1,6 @@
 # USB/IP + Joystick Bridge (RemoteHosas)
 
-A Windows desktop application for sharing USB devices between Windows PCs and monitoring local or imported joysticks. **v0.0.2** is the next testing release (source prepared; publication pending). The interface and application messages are in English.
+A Windows desktop application for sharing USB devices between Windows PCs and monitoring local or imported joysticks. **v0.0.2** is a public testing release. The interface and application messages are in English.
 
 ![Application icon](assets/remote-hosas.png)
 
@@ -239,4 +239,4 @@ Joystick controllers are selected from a Device / Alias / SDL index table. Apply
 
 Connecting from the tray first queries the selected host again. If the device is no longer shared, the list updates and no attach command is sent. Host changes invalidate cached localhost discovery without removing existing imports. Remote hosts are checked periodically while Client Mode is visible or manually with Refresh devices; changes are not pushed instantly between PCs. An empty successful query is distinguished from a failed host query.
 
-Before publishing, physical tests on two PCs and with T.16000M/TWCS hardware remain pending. Automated tests use simulated devices and do not certify driver or hardware compatibility.
+Physical tests on two PCs and with T.16000M/TWCS hardware remain pending for this release. Automated tests use simulated devices and do not certify driver or hardware compatibility.

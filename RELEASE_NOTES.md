@@ -1,4 +1,4 @@
-# v0.0.2 - Prepared for testing (not yet published)
+# v0.0.2 - Public testing release
 
 - Clearer Host and Client tables, state-dependent double-click actions and separate connected-device tracking across hosts.
 - Collapsible activity logs, consistent status presentation and improved spacing.
@@ -8,11 +8,16 @@
 - Tray connection actions re-query the host before attaching; unavailable devices are removed from the refreshed list.
 - Local sharing changes invalidate stale Client/tray discovery; successful empty lists and failed queries have different messages.
 
-## Validation still required before publication
+## Pending hardware validation
 
 - End-to-end tests on two Windows PCs, including network loss, USB removal and exit during an operation.
 - Physical T.16000M and TWCS monitoring tests. Automated input simulations are not hardware validation.
-- Build and smoke-test the release executable when requested. No installer or signing is included.
+
+## Download
+
+Download RemoteHosas.exe (Windows x64) and SHA256SUMS.txt. No application installer or Python installation is needed. The executable is unsigned; USB/IP components and drivers remain separate prerequisites.
+
+Validation: 206 automated tests passed. Physical hardware and two-PC testing listed above remain pending.
 
 # v0.0.1 — First public testing release
 
