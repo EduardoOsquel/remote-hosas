@@ -53,6 +53,7 @@ from usbip_manager import (
 
 class HostModeTab(QWidget):
     activity = pyqtSignal(str)
+    devices_changed = pyqtSignal()
     def __init__(self, gate=None) -> None:
         super().__init__()
         self.gate = gate or OperationGate()
@@ -244,6 +245,7 @@ class HostModeTab(QWidget):
         if self.gate.background and self.devices == devices:
             return
         previous = self.selected_busid()
+        changed = self.devices != devices
         self.devices = devices
         self.device_table.blockSignals(True)
         self.device_table.setRowCount(len(devices))
@@ -262,6 +264,8 @@ class HostModeTab(QWidget):
         self.device_table.blockSignals(False)
         self._update_controls()
         self.device_count.setText(f"Local USB devices - {len(devices)} detected" if devices else empty_text)
+        if changed:
+            self.devices_changed.emit()
 
     @defer_background_action
     def refresh_usbipd_devices(self):
@@ -276,6 +280,7 @@ class HostModeTab(QWidget):
         elif self.bind_btn.isEnabled():
             self.bind_btn.click()
 
+    @defer_background_action
     def bind_selected_device(self) -> None:
         idx = self.selected_index()
         if idx < 0 or idx >= len(self.devices):
@@ -550,6 +555,7 @@ class UsbipJoystickBridgeApp(QMainWindow):
         tabs.setIconSize(QSize(18, 18))
         tabs.addTab(self.host_tab, line_icon("share"), "Host Mode")
         self.client_tab = ClientModeTab(self.operation_gate, local_devices=lambda: self.host_tab.devices)
+        self.host_tab.devices_changed.connect(self.client_tab.invalidate_local_exports)
         tabs.addTab(self.client_tab, line_icon("connect"), "Client Mode")
         self.management_tab = ManagementTab(self.operation_gate)
         tabs.addTab(self.management_tab, line_icon("components"), "Components")

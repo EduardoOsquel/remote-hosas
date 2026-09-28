@@ -139,6 +139,17 @@ class ClientModeTab(ClientDevices, QWidget):
         self._set_imported([])
         self.gate.changed.connect(self._update_controls)
 
+    def invalidate_local_exports(self):
+        """A local host change makes the previous USB/IP discovery obsolete."""
+        from ipaddress import ip_address
+        host, port = self._endpoint()
+        try:
+            local = ip_address(host.strip().strip("[]")).is_loopback
+        except ValueError:
+            local = host.strip().casefold().rstrip(".") == "localhost"
+        if local and port == USBIP_TCP_PORT:
+            self._invalidate_remote()
+
     def prefer_local_device_names(self, host, port, devices):
         """Use Windows names only for a verified local standard-service endpoint."""
         from ipaddress import ip_address

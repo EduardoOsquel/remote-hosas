@@ -61,6 +61,26 @@ def test_double_click_connects_and_disconnects(client):
         widget._process = None
 
 
+@pytest.mark.parametrize("host,invalidated", [("127.0.0.1", True), ("127.0.0.5", True),
+                                             ("localhost", True), ("host-pc", False)])
+def test_local_host_change_invalidates_only_local_discovery(client, host, invalidated):
+    from usbip_manager import parse_imported_devices
+    _, widget = client
+    widget.host_input.setText(host)
+    with simulate(widget, REMOTE):
+        widget.refresh_remote_devices()
+    widget._set_imported(parse_imported_devices(IMPORTED))
+    generation = widget._remote_generation
+    widget.invalidate_local_exports()
+    assert bool(widget.devices) is (not invalidated)
+    assert (widget._remote_generation > generation) is invalidated
+    assert len(widget.imported_devices) == 1
+    assert widget.connected_table.rowCount() == 1
+    if invalidated:
+        assert widget._listed_endpoint != widget._endpoint()
+        assert not widget.attach_btn.isEnabled()
+
+
 def test_client_starts_without_fake_devices_or_ports(client):
     _, widget = client
     assert widget.tcp_port_input.value() == 3240
